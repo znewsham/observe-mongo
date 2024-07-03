@@ -1,0 +1,61 @@
+{
+  "name": "observe-mongo",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "A set of functions to allow you to observe arbitrary mongo cursors with minimal modifications",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "scripts": {
+    "build": "npx tsc",
+    "build-es2020": "npx tsc -p tsconfig-es2020.json",
+    "build-es2015": "npx tsc -p tsconfig-es2015.json",
+    "test": "node --test ./test/index.js",
+    "test:watch": "node --test --watch --enable-source-maps ./test/index.js",
+    "test:watch-only": "node --test --watch --test-only --enable-source-maps ./test/index.js",
+    "test:watch-inspect-only": "node --test --watch --test-only --inspect-brk --enable-source-maps ./test/index.js",
+    "test:watch-inspect": "node --test --watch --enable-source-maps --inspect-brk ./test/index.js",
+    "test:coverage": "NODE_V8_COVERAGE=.coverage npm test && npx c8 report --clean --temp-directory \"./.coverage/\" --report-dir \"./.coverage-report/\" --src \"./lib/*\" --reporter lcov --exclude=\"lib/abstract*\" --include=\"lib/*\" --reporter json-summary",
+    "prepublishOnly": "npm run build && npm run build-es2020 && npm run build-es2015 && npm test"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./redis": {
+      "types": "./lib/redis/index.d.ts",
+      "default": "./lib/redis/index.js"
+    },
+    "./lib/redis": {
+      "types": "./lib/redis/index.d.ts",
+      "default": "./lib/redis/index.js"
+    },
+    "./es2020": {
+      "types": "./es2020/index.d.ts",
+      "default": "./es2020/index.js"
+    },
+    "./es2020/redis": {
+      "types": "./es2020/redis/index.d.ts",
+      "default": "./es2020/redis/index.js"
+    },
+    "./es2015": {
+      "types": "./es2015/index.d.ts",
+      "default": "./es2015/index.js"
+    },
+    "./es2015/redis": {
+      "types": "./es2015/redis/index.d.ts",
+      "default": "./es2015/redis/index.js"
+    }
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@blastjs/minimongo": "^0.1.0",
+    "@types/node": "^20.14.9",
+    "mongodb": "^5.9.2",
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "mongo-collection-helpers": "^1.0.8"
+  }
+}
