@@ -1,44 +1,49 @@
 import type { FindCursor } from "mongodb";
-import { ObserveDriver, ObserveOptions, Stringable } from "./types.js";
+import { FindCursorWithOptionalMap, ObserveDriver, ObserveOptions, Stringable } from "./types.js";
 import { OrderedDict } from "./orderedDict.js";
 import { diffQueryOrderedChanges, diffQueryUnorderedChanges } from "./diff.js";
 import { ObserveMultiplexerInterface } from "./types.js";
 import { StringableIdMap } from "./stringableIdMap.js";
 
+const DEFAULT_POLLING_INTERVAL = 10_000;
 
 export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriver<T> {
-  #cursor: Pick<FindCursor<T>, "forEach">;
+  #cursor: Pick<FindCursorWithOptionalMap<T>, "forEach" | "map" | "rewind">;
   #pollingInterval: NodeJS.Timeout | undefined;
-  #pollingIntervalTime = 5000;
+  #pollingIntervalTime = DEFAULT_POLLING_INTERVAL;
   #ordered: boolean;
   #multiplexer: ObserveMultiplexerInterface<T["_id"], Omit<T, "_id">> | undefined;
   #options: ObserveOptions<T>;
   #running: boolean = false;
-  // #docs: OrderedDict<T> | StringableIdMap<T>
   constructor(
-    cursor: FindCursor<T>,
+    cursor: FindCursorWithOptionalMap<T>,
     _collection: any,
     options: ObserveOptions<T> & { ordered: boolean, pollingInterval?: number }
   ) {
     this.#cursor = cursor.clone();
+    if (options.retainCursorMap !== false && cursor._mapTransform) {
+      this.#cursor.map(cursor._mapTransform);
+    }
     if (options.pollingInterval) {
       this.#pollingIntervalTime = options.pollingInterval;
     }
     this.#ordered = options.ordered;
-    // this.#docs = options.ordered ? new OrderedDict() : new StringableIdMap();
     this.#options = options;
   }
 
   async init(multiplexer: ObserveMultiplexerInterface<T["_id"], Omit<T, "_id">>): Promise<void> {
     this.#multiplexer = multiplexer;
     await this.#cursor.forEach(doc => {
+      const { _id, ...restOfDoc } = doc;
+      if (_id === undefined) {
+        throw new Error("Can't observe documents without an _id")
+      }
       if (this.#ordered) {
-        multiplexer.addedBefore(doc._id, doc, undefined);
+        multiplexer.addedBefore(_id, restOfDoc, undefined);
       }
       else {
-        multiplexer.added(doc._id, doc);
+        multiplexer.added(_id, restOfDoc);
       }
-      // this.#docs.set(doc._id, doc);
     });
     this.#multiplexer.ready();
     this.#startPolling();
@@ -73,16 +78,17 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
     if (!this.#multiplexer) {
       throw new Error("Can't be missing a multiplexer");
     }
-    const newDocs = this.#ordered ? new OrderedDict<T["_id"], T>() : new StringableIdMap<T["_id"], T>();
+    const newDocs = this.#ordered ? new OrderedDict<T["_id"], Omit<T, "_id">>() : new StringableIdMap<T["_id"], Omit<T, "_id">>();
+    this.#cursor.rewind();
     await this.#cursor.forEach((doc) => {
-      newDocs.set(doc._id, doc);
+      const { _id, ...rest } = doc;
+      newDocs.set(_id, rest);
     });
     await this.#multiplexer.flush();
     if (this.#ordered) {
-      const iterator =
       diffQueryOrderedChanges<T>(
-        Array.from((await this.#multiplexer.getDocs()).values()) as T[],
-        Array.from(newDocs.values()),
+        Array.from((await this.#multiplexer.getDocs()).entries()).map(([_id, doc]) => ({ _id, ...doc }) as T),
+        Array.from(newDocs.entries()).map(([_id, doc]) => ({ _id, ...doc }) as T),
         this.#multiplexer,
         {
           equals: this.#options.equals,

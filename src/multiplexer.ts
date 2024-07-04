@@ -172,7 +172,12 @@ export class ObserveMultiplexer<
         return;
       }
       this.#cache.addedBefore(id, doc, before);
-      await Promise.all(Array.from(this.#handles.values()).map(handle => handle.observes("addedBefore") && handle.addedBefore(id, doc, before)));
+      await Promise.all(Array.from(this.#handles.values()).map(async (handle) => {
+        handle.observes("addedBefore") && await handle.addedBefore(id, doc, before);
+
+        // this is an oddly specific meteor constrait - I have no idea why
+        handle.observes("added") && await handle.added(id, doc);
+      }));
     });
   }
 

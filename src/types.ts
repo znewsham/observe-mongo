@@ -89,54 +89,107 @@ export function naiveClone<T>(doc: T): T {
   return JSON.parse(JSON.stringify(doc));
 }
 
+export type FindCursorWithOptionalMap<T> = FindCursor<T> & {
+  _mapTransform?: <X>(doc: T) => X
+}
+
 export type ObserveOptions<T extends { _id: Stringable }> = {
+  /** Interanal only - indicates the callbacks are ordered, will be calculated based on the provided callbacks */
   ordered?: boolean,
+
+  /**
+   * Set to true if the callbacks (or anything downstream) wont mutate the documents (avoids a clone). You should aim to always set this to true
+   * @default: false
+   */
   nonMutatingCallbacks?: boolean,
+
+  /**
+   * Only interested in changes from this point forwards. Will skip the initial set of adds
+   */
+  suppressInitial?: boolean,
+
+  /**
+   * A "clone" implementation - like EJSON.clone.
+   * @default: doc => JSON.parse(JSON.stringify(doc))
+   */
   clone?: Clone,
+
+  /**
+   * An "equals" implementation - like EJSON.equals
+   * @default: (doc1, doc2) => JSON.stringify(doc1) === JSON.stringify(doc2)
+   */
   equals?: Equals,
-  transform?: <T>(doc: T) => T,
+
+  /** The transform of a collection - will be used for ObserveCallbacks */
+  transform?: <T>(doc: Document) => T,
+
+  /**
+   * cursor.find().map().clone loses the map - if you're using
+   * @default: true
+   */
+
+  retainCursorMap?: boolean
   driverClass?: ObserveDriverConstructor<T>
   multiplexerId?: (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>) => string
 };
 
+export type ObserveOnlyOptions = {
+  /**
+   * Whether to skip indices for the addedAt, etc callbacks. Only meaningful if the callbacks are ordered
+   * @default: false
+   */
+  noIndices?: boolean;
+}
+
+
+export type RecursiveReadOnly<T> = {
+  readonly [P in keyof T]: RecursiveReadOnly<T[P]>;
+}
+
 export type MinimalCollection<T extends Document> = Pick<Collection<T>, "find" | "findOne">
 
-export type OrderedObserveChangesCallbacks<ID extends Stringable, T> = {
-  addedBefore?: (id: ID, doc: T, before: ID | undefined) => void;
-  movedBefore?: (id: ID, before: ID | undefined) => void;
+export type OrderedObserveChangesCallbacks<ID extends Stringable, T, READONLY extends boolean | undefined = undefined> = {
+  addedBefore?: READONLY extends true ? (id: RecursiveReadOnly<ID>, doc: RecursiveReadOnly<T>, before: RecursiveReadOnly<ID> | undefined) => void | Promise<void> : (id: ID, doc: T, before: ID | undefined) => void | Promise<void>;
+  movedBefore?: READONLY extends true ? (id: RecursiveReadOnly<ID>, before: RecursiveReadOnly<ID> | undefined) => void | Promise<void> : (id: ID, before: ID | undefined) => void | Promise<void> | Promise<void>;
 }
 
-export type SharedObserveChangesCallbacks<ID extends Stringable, T> = {
-  changed?: (id: ID, fields: Partial<T>) => void;
-  removed?: (id: ID) => void;
+export type SharedObserveChangesCallbacks<ID extends Stringable, T, READONLY extends boolean | undefined = undefined> = {
+  changed?: READONLY extends true ? (id: RecursiveReadOnly<ID>, fields: Partial<RecursiveReadOnly<T>>) => void | Promise<void> : (id: ID, fields: Partial<T>) => void | Promise<void>;
+  removed?: READONLY extends true ? (id: RecursiveReadOnly<ID>) => void | Promise<void> : (id: ID) => void | Promise<void>;
 }
 
-export type UnorderedObserveChangesCallbacks<ID extends Stringable, T> = {
-  added?:(id: ID, doc: T) => void;
+export type UnorderedObserveChangesCallbacks<ID extends Stringable, T, READONLY extends boolean | undefined = undefined> = {
+  added?: READONLY extends true ? (id: RecursiveReadOnly<ID>, doc: RecursiveReadOnly<T>) => void | Promise<void> : (id: ID, doc: T) => void | Promise<void>;
 }
 
-export type OrderedObserveCallbacks<ID extends Stringable, T> = {
-  addedAt?: (doc: T, index: number, before: ID | undefined) => void;
-  changedAt?: (newDoc: T, oldDoc: T, index: number) => void;
-  movedTo?: (doc: T, from: number, to: number, before: ID | undefined) => void;
-  removedAt?: (doc: T, index: number) => void;
+export type OrderedObserveCallbacks<T, READONLY extends boolean | undefined = undefined> = {
+  addedAt?: READONLY extends true ? (doc: RecursiveReadOnly<T>, index: number, before: RecursiveReadOnly<T> | undefined) => void | Promise<void> : (doc: T, index: number, before: T | undefined) => void | Promise<void>;
+  changedAt?: READONLY extends true ? (newDoc: RecursiveReadOnly<T>, oldDoc: RecursiveReadOnly<T>, index: number) => void | Promise<void> : (newDoc: T, oldDoc: T, index: number) => void | Promise<void>;
+  movedTo?: READONLY extends true ? (doc: RecursiveReadOnly<T>, from: number, to: number, before: RecursiveReadOnly<T> | undefined) => void | Promise<void> : (doc: T, from: number, to: number, before: T | undefined) => void | Promise<void>;
+  removedAt?: READONLY extends true ? (doc: RecursiveReadOnly<T>, index: number) => void | Promise<void> : (doc: T, index: number) => void | Promise<void>;
 }
 
-export type UnorderedObserveCallbacks<T> = {
-  added?: (doc: T) => void;
-  changed?: (newDoc: T, oldDoc: T) => void;
-  removed?: (doc: T) => void;
+export type UnorderedObserveCallbacks<T, READONLY extends boolean | undefined = undefined> = {
+  added?: READONLY extends true ? (doc: RecursiveReadOnly<T>) => void | Promise<void> : (doc: RecursiveReadOnly<T>) => void | Promise<void>;
+  changed?: READONLY extends true ? (newDoc: RecursiveReadOnly<T>, oldDoc: RecursiveReadOnly<T>) => void | Promise<void> : (newDoc: T, oldDoc: T) => void | Promise<void>;
+  removed?: READONLY extends true ? (doc: RecursiveReadOnly<T>) => void | Promise<void> : (doc: T) => void | Promise<void>;
 }
 
 export type Without<T, U> = { [P in Exclude<keyof T, keyof U>]?: never };
 export type XOR<T, U> = (T | U) extends object ? (Without<T, U> & U) | (Without<U, T> & T) : T | U;
 
-export type ObserveCallbacks<ID extends Stringable, T> = XOR<OrderedObserveCallbacks<ID, T>, UnorderedObserveCallbacks<{ _id: ID } & T>> & {
+
+export type ObserveCallbackOptions = {
   _suppress_initial?: boolean;
   _no_indices?: boolean;
 };
+export type ObserveMutatingCallbacks<T extends { _id: Stringable }> = XOR<OrderedObserveCallbacks<T, false>, UnorderedObserveCallbacks<T, false>>;
+export type ObserveNonMutatingCallbacks<T extends { _id: Stringable }> = XOR<OrderedObserveCallbacks<T, true>, UnorderedObserveCallbacks<T, true>>;
+export type ObserveCallbacks<T extends { _id: Stringable }> = ObserveMutatingCallbacks<T> | ObserveNonMutatingCallbacks<T>;
 
-export type ObserveChangesCallbacks<ID extends Stringable, T> = XOR<(OrderedObserveChangesCallbacks<ID, T> & SharedObserveChangesCallbacks<ID, T>), (UnorderedObserveChangesCallbacks<ID, T> & SharedObserveChangesCallbacks<ID, T>)>;
+export type ObserveChangesNonMutatingCallbacks<ID extends Stringable, T> = XOR<(OrderedObserveChangesCallbacks<ID, T, true> & SharedObserveChangesCallbacks<ID, T, true>), (UnorderedObserveChangesCallbacks<ID, T, true> & SharedObserveChangesCallbacks<ID, T, true>)>;
+export type ObserveChangesMutatingCallbacks<ID extends Stringable, T> = XOR<(OrderedObserveChangesCallbacks<ID, T, false> & SharedObserveChangesCallbacks<ID, T, false>), (UnorderedObserveChangesCallbacks<ID, T, false> & SharedObserveChangesCallbacks<ID, T, false>)>;
+export type ObserveChangesCallbacks<ID extends Stringable, T> = ObserveChangesMutatingCallbacks<ID, T> | ObserveChangesNonMutatingCallbacks<ID, T>
 export type ObserveChangesCallbackKeys = keyof ObserveChangesCallbacks<Stringable, {}>
 
 

@@ -8,13 +8,19 @@ export { CachingChangeObserverImpl } from "./cachingChangeObserver.js";
 export { NestedProjectionOfTSchema, CursorDescription, WithCursorDescription } from "mongo-collection-helpers";
 
 export type {
+  RecursiveReadOnly,
   ObserveChangesCallbacks,
+  ObserveChangesMutatingCallbacks,
+  ObserveChangesNonMutatingCallbacks,
   ObserveCallbacks,
+  ObserveMutatingCallbacks,
+  ObserveNonMutatingCallbacks,
   ObserveDriver,
   ObserveDriverConstructor,
   ObserveMultiplexerInterface,
   CachingChangeObserver,
   ObserveOptions,
+  ObserveOnlyOptions,
   Stringable,
   ObserveHandle
 } from "./types.js";
@@ -24,3 +30,4 @@ export {
   fromStringId,
   ObserveChangesCallbackNames
 } from "./types.js";
+

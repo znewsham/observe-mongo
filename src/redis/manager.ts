@@ -95,6 +95,8 @@ export class SubscriptionManager {
       _id: message[RedisPipe.DOC]._id
     };
     const collection: Collection<T> = entry.collection as Collection<T>;
+
+    // TODO: we should check if the fields intersect with the completeProjection
     const doc = message[RedisPipe.EVENT] === Events.REMOVE
       ? message[RedisPipe.DOC]
       : await collection.findOne<T>(selector, { projection: entry.projection });

@@ -24,7 +24,7 @@ import { NestedProjectionOfTSchema, unionOfProjections } from "mongo-collection-
 
 export type RedisObserverDriverOptions<
   T extends { _id: Stringable },
-  SortT
+  SortT = {}
 > = ObserveOptions<T>
 & {
   ordered: boolean,
@@ -74,6 +74,7 @@ export class RedisObserverDriver<
   #sortProjection: NestedProjectionOfTSchema<SortT> | undefined;
   #completeProjection: NestedProjectionOfTSchema<T & SortT & FilterT> | undefined;
   #sortProjectionFn: (projection: Document) => SortT;
+  #transform: (doc: any) => ET;
 
   // technically, #docs contains the document ID + the fields necessary to evaluate the sort.
   // this doesn't necessarily intersect in any way with the projection fields which are
@@ -96,6 +97,9 @@ export class RedisObserverDriver<
     options: RedisObserverDriverOptions<T, SortT>
   ) {
     this.#cursor = cursor.clone();
+    if (options.retainCursorMap !== false && cursor._mapTransform) {
+      this.#cursor.map(cursor._mapTransform);
+    }
     this.#ordered = options.ordered;
     this.#collection = collection;
 
@@ -131,6 +135,7 @@ export class RedisObserverDriver<
       // If we have no projection defined, we want the entire document - if we want the entire document T and Exactly<T, T> are equivalent
       : (doc: T | (SortT & T)) => doc as unknown as Exactly<T, T>
     this.#matcher = this.#cursor.cursorDescription.filter ? new options.Matcher(this.#cursor.cursorDescription.filter) : undefined;
+    this.#transform = options.transform || ((doc) => doc as ET);
   }
 
   get channels() {
@@ -228,7 +233,7 @@ export class RedisObserverDriver<
 
   #projectionFnWithoutId(doc: T | (T & SortT)): ET {
     const { _id, ...rest } = this.#projectionFn(doc);
-    return rest as unknown as ET;
+    return this.#transform(rest) as unknown as ET;
   }
 
   async #size(): Promise<number> {
@@ -299,7 +304,6 @@ export class RedisObserverDriver<
     await this.#cursor.project<{ _id: T["_id"] }>({ _id: 1 }).forEach((doc) => {
       newDocs.add(doc._id, {});
     });
-    debugger;
 
     diffQueryOrderedChanges(
       [...this.#sortDocs.keys()].map(id => ({ _id: id })),
@@ -600,20 +604,23 @@ export class RedisObserverDriver<
     const localMultiplexer = multiplexer as unknown as ObserveMultiplexerInterface<T["_id"], ET>;
     this.#multiplexer = localMultiplexer;
     const cursor = this.#sortDocs && this.#sortProjection ? this.#cursor.project<T & SortT>(this.#combinedProjection): this.#cursor;
-    await cursor.forEach(doc => {
-      this.#queue.queueTask(() => {
-        if (this.#ordered) {
-          localMultiplexer.addedBefore(doc._id, this.#projectionFnWithoutId(doc), undefined);
-        }
-        else {
-          localMultiplexer.added(doc._id, this.#projectionFnWithoutId(doc));
-        }
-        if (this.#sortDocs) {
-          this.#sortDocs.set(doc._id, this.#sortProjectionFn(doc));
-        }
+
+    if (!this.#options.suppressInitial) {
+      await cursor.forEach(doc => {
+        this.#queue.queueTask(() => {
+          if (this.#ordered) {
+            localMultiplexer.addedBefore(doc._id, this.#projectionFnWithoutId(doc), undefined);
+          }
+          else {
+            localMultiplexer.added(doc._id, this.#projectionFnWithoutId(doc));
+          }
+          if (this.#sortDocs) {
+            this.#sortDocs.set(doc._id, this.#sortProjectionFn(doc));
+          }
+        });
       });
-    });
-    await this.#queue.flush();
+      await this.#queue.flush();
+    }
     this.#multiplexer.ready();
   }
 

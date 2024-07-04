@@ -1,5 +1,5 @@
 import type { Collection, FindCursor } from "mongodb";
-import { MinimalCollection, ObserveCallbacks, ObserveChangesCallbacks, ObserveDriver, ObserveHandle, ObserveMultiplexerInterface, ObserveOptions, Observer, Stringable, naiveClone } from "./types.js";
+import { MinimalCollection, ObserveCallbacks, ObserveChangesCallbacks, ObserveChangesMutatingCallbacks, ObserveChangesNonMutatingCallbacks, ObserveDriver, ObserveHandle, ObserveMultiplexerInterface, ObserveOnlyOptions, ObserveOptions, Observer, Stringable, naiveClone } from "./types.js";
 import { ObserveMultiplexer } from "./multiplexer.js";
 import { ObserveHandleImpl } from "./handle.js";
 import { PollingDriver } from "./pollingDriver.js";
@@ -14,17 +14,35 @@ let nextMultiplexerId = 1;
 export async function observeChanges<T extends { _id: Stringable }>(
   cursor: FindCursor<T>,
   collection: MinimalCollection<{ _id?: Stringable }>,
+  callbacks: ObserveChangesNonMutatingCallbacks<T["_id"], Omit<T, "_id">>,
+  options: { nonMutatingCallbacks: true } & Omit<ObserveOptions<T>, "transform">
+): Promise<ObserveHandle>
+export async function observeChanges<T extends { _id: Stringable }>(
+  cursor: FindCursor<T>,
+  collection: MinimalCollection<{ _id?: Stringable }>,
+  callbacks: ObserveChangesMutatingCallbacks<T["_id"], Omit<T, "_id">>,
+  options: { nonMutatingCallbacks: false } & Omit<ObserveOptions<T>, "transform">
+): Promise<ObserveHandle>
+export async function observeChanges<T extends { _id: Stringable }>(
+  cursor: FindCursor<T>,
+  collection: MinimalCollection<{ _id?: Stringable }>,
+  callbacks: ObserveChangesMutatingCallbacks<T["_id"], Omit<T, "_id">>,
+  options: Omit<ObserveOptions<T>, "transform">
+): Promise<ObserveHandle>
+export async function observeChanges<T extends { _id: Stringable }>(
+  cursor: FindCursor<T>,
+  collection: MinimalCollection<{ _id?: Stringable }>,
   callbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>,
-  options: Omit<ObserveOptions<T>, "transform"> = {}
-) : Promise<ObserveHandle> {
+  options: Omit<ObserveOptions<T>, "transform" | "ordered"> = {}
+): Promise<ObserveHandle> {
   const {
-    ordered = observeChangesCallbacksAreOrdered(callbacks),
     nonMutatingCallbacks = true,
     driverClass = PollingDriver,
     multiplexerId = (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>) => `${nextMultiplexerId++}`,
   } = options;
+  const ordered = observeChangesCallbacksAreOrdered(callbacks);
 
-  const id = multiplexerId(cursor, collection, options);
+  const id = multiplexerId(cursor, collection, { ordered, ...options });
 
   const existingMultiplexer = observerMultiplexers.get(id);
   let multiplexer: ObserveMultiplexer<T["_id"], Omit<T, "_id">>;
@@ -69,27 +87,28 @@ export async function observeChanges<T extends { _id: Stringable }>(
 }
 
 function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable }>(
-  observeCallbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>,
+  observeCallbacks: ObserveCallbacks<T>,
   {
-    clone = naiveClone,
-    ordered = observeCallbacksAreOrdered(observeCallbacks),
-    transform: _transform
-  }: ObserveOptions<T> = {}
+    clone: _clone = naiveClone,
+    transform: _transform,
+    nonMutatingCallbacks,
+    noIndices,
+    suppressInitial
+  }: Omit<ObserveOptions<T> & ObserveOnlyOptions, "ordered"> = {}
 ): { observeChangesCallbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>, setSuppressed(suppressed: boolean): void } {
   const transform = _transform || ((doc:any) => doc);
-  let suppressed = !!observeCallbacks._suppress_initial;
-
+  let suppressed = suppressInitial;
+  const ordered = observeCallbacksAreOrdered(observeCallbacks);
   const cache = new CachingChangeObserverImpl({
     ordered
   });
 
-  let observeChangesCallbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>;
+  const cloneIfMutating = nonMutatingCallbacks ? <X>(doc: X) => doc : _clone;
+
+
+  let observeChangesCallbacks: ObserveChangesNonMutatingCallbacks<T["_id"], Omit<T, "_id">>;
   if (ordered) {
-    // The "_no_indices" option sets all index arguments to -1 and skips the
-    // linear scans required to generate them.  This lets observers that don't
-    // need absolute indices benefit from the other features of this API --
-    // relative order, transforms, and applyChanges -- without the speed hit.
-    const indices = !observeCallbacks._no_indices;
+    const indices = !noIndices;
 
     observeChangesCallbacks = {
       addedBefore(id, fields, before) {
@@ -101,7 +120,9 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
           return;
         }
 
-        const doc = transform(clone({ _id: id, ...fields }));
+        const doc = transform(cloneIfMutating({ _id: id, ...fields }));
+
+        const beforeDoc = before && transform(cloneIfMutating(cache.get(before)));
 
         if (observeCallbacks.addedAt) {
           observeCallbacks.addedAt(
@@ -111,7 +132,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
                 ? cache.indexOf(before)
                 : cache.size()
               : -1,
-            before
+            beforeDoc
           );
         }
         else if (observeCallbacks.added) {
@@ -123,12 +144,12 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
           return;
         }
 
-        let doc = clone(cache.get(id));
+        let doc = cloneIfMutating(cache.get(id));
         if (!doc) {
           throw new Error(`Unknown id for changed: ${id}`);
         }
 
-        const cloned = clone(doc);
+        const cloned = cloneIfMutating(doc);
         const oldDoc = transform(cloned);
 
         applyChanges(doc, fields);
@@ -156,6 +177,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
             : cache.size()
           : -1;
         cache.movedBefore(id, before);
+        const beforeDoc = before && transform(cloneIfMutating(cache.get(before)));
 
         // When not moving backwards, adjust for the fact that removing the
         // document slides everything back one slot.
@@ -164,10 +186,10 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         }
 
         observeCallbacks.movedTo(
-          transform(clone(cache.get(id))),
+          transform(cloneIfMutating(cache.get(id))),
           from,
           to,
-          before
+          beforeDoc
         );
       },
       removed(id) {
@@ -207,13 +229,13 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
           if (!oldDoc) {
             throw new Error(`Unknown id for changed: ${id}`);
           }
-          const doc = clone(oldDoc);
+          const doc = cloneIfMutating(oldDoc);
 
           applyChanges(doc, fields);
 
           observeCallbacks.changed(
             transform(doc),
-            transform(clone(oldDoc))
+            transform(cloneIfMutating(oldDoc))
           );
         }
       },
@@ -235,8 +257,8 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
 export async function observe<T extends { _id: Stringable }>(
   cursor: FindCursor<T>,
   collection: MinimalCollection<{ _id?: Stringable }>,
-  observeCallbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>,
-  options: ObserveOptions<T> = {}
+  observeCallbacks: ObserveCallbacks<T>,
+  options: Omit<ObserveOptions<T> & ObserveOnlyOptions, "ordered"> = {}
 ): Promise<ObserveHandle> {
   const { setSuppressed, observeChangesCallbacks } = observeChangesCallbacksFromObserveCallbacks(
     observeCallbacks,
@@ -254,9 +276,9 @@ export async function observe<T extends { _id: Stringable }>(
 }
 
 export async function observeFromObserveChanges<T extends { _id: Stringable }>(
-  observeCallbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>,
+  observeCallbacks: ObserveCallbacks<T>,
   observer: Observer<T>,
-  options: ObserveOptions<T> = {}
+  options: Omit<ObserveOptions<T>, "ordered"> = {}
 ): Promise<ObserveHandle> {
   const { setSuppressed, observeChangesCallbacks } = observeChangesCallbacksFromObserveCallbacks(
     observeCallbacks,
@@ -272,7 +294,7 @@ export async function observeFromObserveChanges<T extends { _id: Stringable }>(
 }
 
 
-export function observeCallbacksAreOrdered<T extends { _id: Stringable }>(callbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>) {
+export function observeCallbacksAreOrdered<T extends { _id: Stringable }>(callbacks: ObserveCallbacks<T>) {
   if (callbacks.added && callbacks.addedAt) {
     throw new Error('Please specify only one of added() and addedAt()');
   }

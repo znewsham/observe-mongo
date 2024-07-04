@@ -49,9 +49,9 @@ describe("unordered observe", () => {
 
     cursor._data[0] = { ...cursor._data[0], value: "hello" };
 
-    await setTimeout(10);
+    await setTimeout(30);
     handle.stop();
-
+    console.log(changedMock.mock.calls.map(x => x.arguments));
     assert.strictEqual(changedMock.mock.callCount(), 1);
   });
   it("removes are received", async () => {
@@ -116,11 +116,11 @@ describe("ordered observe", () => {
       collection,
       {
         changedAt: changedMock,
-        _no_indices: true
       },
       {
         ordered: true,
-        pollingInterval: 5
+        noIndices: true,
+        pollingInterval: 5,
       }
     );
 
@@ -151,11 +151,11 @@ describe("ordered observe", () => {
       collection,
       {
         movedTo: movedBeforeMock,
-        changedAt: changedMock,
-        _no_indices: true
+        changedAt: changedMock
       },
       {
         ordered: true,
+        noIndices: true,
         pollingInterval: 5
       }
     );
@@ -181,11 +181,11 @@ describe("ordered observe", () => {
       collection,
       {
         movedTo: movedBeforeMock,
-        changedAt: changedMock,
-        _no_indices: true
+        changedAt: changedMock
       },
       {
         ordered: true,
+        noIndices: true,
         pollingInterval: 5
       }
     );
