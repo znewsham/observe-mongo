@@ -1,32 +1,33 @@
-import { Stringable, stringId } from "./types.js";
+import { StringObjectWithoutID, Stringable, stringId } from "./types.js";
 
-class Item<T> {
+class Item<ID, T> {
   value: T;
-  next: Item<T> | undefined;
-  prev: Item<T> | undefined;
+  key: ID;
+  next: Item<ID, T> | undefined;
+  prev: Item<ID, T> | undefined;
 
-  constructor(value: T) {
+  constructor(key: ID, value: T) {
     this.value = value;
+    this.key = key;
   }
 }
+export type Exactly<T, U> = T extends U ? U extends T ? T : never : never;
 
-export class OrderedDict<T extends { _id: Stringable }> implements Iterable<T> {
-  #keysToItems = new Map<string, Item<T>>();
-  #head: Item<T> | undefined;
-  #tail: Item<T> | undefined;
-  constructor(iterable?: Iterable<T>) {
-    if (iterable) {
-      for (let item of iterable) {
-        this.add(item);
-      }
-    }
-  }
+type NoID<T> = T extends { _id: any } ? never : T;
 
-  get head() {
+export class OrderedDict<
+  ID extends Stringable,
+  T extends Exactly<StringObjectWithoutID, StringObjectWithoutID>
+> implements Iterable<[Stringable, T]> {
+  #keysToItems = new Map<string, Item<ID, T>>();
+  #head: Item<ID, T> | undefined;
+  #tail: Item<ID, T> | undefined;
+
+  get head(): Item<ID, T> | undefined {
     return this.#head;
   }
 
-  get tail() {
+  get tail(): Item<ID, T> | undefined {
     return this.#tail;
   }
 
@@ -41,7 +42,7 @@ export class OrderedDict<T extends { _id: Stringable }> implements Iterable<T> {
       return -1;
     }
     for (const doc of this) {
-      if (doc === item.value) {
+      if (doc[1] === item.value) {
         return index;
       }
       index++;
@@ -49,29 +50,27 @@ export class OrderedDict<T extends { _id: Stringable }> implements Iterable<T> {
     return -1;
   }
 
-  moveBefore(value: T, before?: T) {
-    const valueId = stringId(value._id);
-    const beforeId = before && stringId(before?._id);
-    const beforeItem = beforeId && this.#keysToItems.get(beforeId);
+  moveBefore(key: ID, before?: ID) {
+    const valueId = stringId(key);
     const item = this.#keysToItems.get(valueId);
-    if (!beforeItem) {
-      throw new Error("Before item doesn't exist");
-    }
     if (!item) {
       throw new Error("Item doesn't exist");
     }
-    this.remove(value);
-    this.add(value, before);
+    this.delete(key);
+    this.add(key, item.value, before);
   }
 
-  add(value: T, before?: T) {
-    const beforeId = before && stringId(before?._id);
-    const valueId = stringId(value._id);
+  add(key: ID, value: T, before?: ID) {
+    const beforeId = before && stringId(before);
+    const valueId = stringId(key);
     const beforeItem = beforeId && this.#keysToItems.get(beforeId);
+    if (before && !beforeItem) {
+      throw new Error("Before item doesn't exist");
+    }
     if (this.#keysToItems.get(valueId)) {
       throw new Error("Item already exists");
     }
-    const newItem = new Item(value);
+    const newItem = new Item(key, value);
     if (!beforeItem) {
       if (!this.#head) {
         this.#head = newItem;
@@ -125,43 +124,78 @@ export class OrderedDict<T extends { _id: Stringable }> implements Iterable<T> {
     this.#keysToItems.delete(stringId(id));
   }
 
-  remove(value: T) {
-    return this.delete(value._id);
+  remove(key: ID) {
+    return this.delete(key);
   }
 
-  [Symbol.iterator](): Iterator<T> {
+  values(): IterableIterator<T> {
+    const iterator = this[Symbol.iterator]();
+    return {
+      next() {
+        const current = iterator.next();
+        if (current.done) {
+          return { value: undefined, done: true };
+        }
+        return {
+          value: current.value[1], done: false
+        };
+      },
+      [Symbol.iterator]() { return this; }
+    }
+  }
+
+  keys(): IterableIterator<Stringable> {
+    const iterator = this[Symbol.iterator]();
+    return {
+      next() {
+        const current = iterator.next();
+        if (current.done) {
+          return { value: undefined, done: true };
+        }
+        return {
+          value: current.value[0], done: false
+        };
+      },
+      [Symbol.iterator]() { return this; }
+    }
+  }
+  entries(): IterableIterator<[Stringable, T]> {
+    return this[Symbol.iterator]();
+  }
+
+  // gnarly - but this ensures we expose the same iterator signature as StringableIdMap
+  [Symbol.iterator](): IterableIterator<[Stringable, T]> {
     let head = this.#head;
     return {
       next() {
         const current = head;
         head = head?.next;
         if (current) {
-          return { value: current.value, done: false };
+          return { value: [current.key, current.value], done: false };
         }
         return { value: undefined, done: true };
-      }
+      },
+      [Symbol.iterator]() { return this; }
     }
   }
 
-  forEach(iterator: (item: T, index: number) => void): void {
-    let index = 0;
+  forEach(iterator: (item: T, key: Stringable) => void): void {
     for(let item of this) {
       if (item) {
-        iterator(item, index++);
+        iterator(item[1], item[0]);
       }
     }
   }
 
-  set(id: Stringable, doc: T) {
-    const { _id, ...docWithoutId } = doc;
-    this.add({ _id: id, ...docWithoutId } as T);
+  set(id: ID, doc: T) {
+    this.add(id, doc);
   }
 
-  get(id: Stringable) {
+  get(id: ID) {
     return this.#keysToItems.get(stringId(id))?.value;
   }
 
-  has(id: Stringable) {
+  has(id: ID) {
     return this.#keysToItems.has(stringId(id));
   }
 }

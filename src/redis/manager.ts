@@ -28,7 +28,11 @@ export class SubscriptionManager {
     this.#pubSubManager = pubSubManager;
   }
 
-  attach<T extends { _id: Stringable }>(subscriber: RedisSubscriber<T>) {
+  attach<
+    T extends { _id: Stringable },
+    SortT extends Document = Document,
+    FilterT extends Document = Document
+  >(subscriber: RedisSubscriber<T, SortT, FilterT>) {
     subscriber.channels.forEach((channel) => {
       if (!this.#subscribers.has(channel)) {
         const handle = (message: RedisMessage<{ _id: T["_id"] }>) => this.process(channel, message);
@@ -52,7 +56,11 @@ export class SubscriptionManager {
     });
   }
 
-  detach<T extends { _id: Stringable }>(subscriber: RedisSubscriber<T>) {
+  detach<
+    T extends { _id: Stringable },
+    SortT extends Document = Document,
+    FilterT extends Document = Document
+  >(subscriber: RedisSubscriber<T, SortT, FilterT>) {
     subscriber.channels.forEach((channel) => {
       const entry = this.#subscribers.get(channel);
       if (!entry) {
@@ -75,11 +83,11 @@ export class SubscriptionManager {
   ) {
     const entry = this.#subscribers.get(channel);
     if (!entry) {
-      return "early1";// unsub race condition
+      return ;// unsub race condition
     }
     if (!message[RedisPipe.EVENT]) {
       // this message isn't for us
-      return "early2";
+      return;
     }
 
     // @ts-expect-error
@@ -92,7 +100,7 @@ export class SubscriptionManager {
       : await collection.findOne<T>(selector, { projection: entry.projection });
 
     if (doc === null) {
-      return "early3"; // the document was removed - we'll see a remove event shortly.
+      return; // the document was removed - we'll see a remove event shortly.
     }
 
     await Promise.all([...entry.subscribers].map((subscriber) => {
@@ -102,6 +110,5 @@ export class SubscriptionManager {
         [RedisPipe.DOC]: doc as T
       }, { optimistic });
     }));
-    return "Woohoo";
   }
 }

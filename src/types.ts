@@ -102,17 +102,17 @@ export type ObserveOptions<T extends { _id: Stringable }> = {
 export type MinimalCollection<T extends Document> = Pick<Collection<T>, "find" | "findOne">
 
 export type OrderedObserveChangesCallbacks<T> = {
-  addedBefore?: (id: Stringable, doc: T, before: Stringable | undefined) => void;
+  addedBefore?: (id: Stringable, doc: Omit<T, "_id">, before: Stringable | undefined) => void;
   movedBefore?: (id: Stringable, before: Stringable | undefined) => void;
 }
 
 export type SharedObserveChangesCallbacks<T> = {
-  changed?: (id: Stringable, fields: Partial<T>) => void;
+  changed?: (id: Stringable, fields: Partial<Omit<T, "_id">>) => void;
   removed?: (id: Stringable) => void;
 }
 
 export type UnorderedObserveChangesCallbacks<T> = {
-  added?: (id: Stringable, doc: T) => void;
+  added?:(id: Stringable, doc: Omit<T, "_id">) => void;
 }
 
 export type OrderedObserveCallbacks<T> = {
@@ -156,21 +156,30 @@ export type ObserveDriverConstructor<T extends { _id: Stringable }> = {
   new(cursor: FindCursor<T>, collection: Collection<T>, options: any): ObserveDriver<T>
 }
 
-export type ObserveMultiplexerInterface<T extends { _id: Stringable }> = ObserveChangesObserver<T> & {
+
+export type StringObjectWithoutID = Omit<{
+  [k in string]: any
+}, "_id">
+
+export type ObserveMultiplexerInterface<
+  ID extends Stringable,
+  T extends StringObjectWithoutID,
+  TID extends { _id: Stringable } & T = { _id: Stringable } & T
+> = ObserveChangesObserver<T> & {
   ready(): void;
 
   /** retuns the actual set of docs (not cloned) after all pending changes have been made */
-  getDocs() : Promise<OrderedDict<T> | StringableIdMap<T>>;
+  getDocs() : Promise<OrderedDict<Stringable, TID> | StringableIdMap<T & { _id: Stringable }>>;
   /** checks whether a document exists after all pending changes have been made */
   has(id: Stringable): Promise<boolean>;
   /** retuns an actual doc (not cloned) after all pending changes have been made */
-  get(id: Stringable): Promise<T | undefined>;
+  get(id: Stringable): Promise<TID | undefined>;
   /** ensures all changes have been made */
   flush(downstream?: boolean): Promise<void>;
 }
 
 export type ObserveDriver<T extends { _id: Stringable }> = {
-  init(multiplexer: ObserveMultiplexerInterface<T>): Promise<void>
+  init(multiplexer: ObserveMultiplexerInterface<T["_id"], T>): Promise<void>
   stop(): void
 }
 
@@ -189,5 +198,5 @@ export type CachingChangeObserver<T extends { _id: Stringable }> = ObserveChange
   indexOf(id: Stringable): number;
   size(): number;
   get(id: Stringable): T | undefined;
-  getDocs() : OrderedDict<T> | StringableIdMap<T>;
+  getDocs() : OrderedDict<T["_id"], T> | StringableIdMap<T>;
 }

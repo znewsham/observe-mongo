@@ -2,20 +2,24 @@ import { CachingChangeObserverImpl } from "./cachingChangeObserver.js";
 import { OrderedDict } from "./orderedDict.js";
 import { AsynchronousQueue } from "./queue.js";
 import { StringableIdMap } from "./stringableIdMap.js";
-import { CachingChangeObserver, ObserveChangesCallbackKeys, ObserveChangesCallbackNames, ObserveChangesObserver, ObserveMultiplexerInterface, Stringable } from "./types.js";
+import { CachingChangeObserver, ObserveChangesCallbackKeys, ObserveChangesCallbackNames, ObserveChangesObserver, ObserveMultiplexerInterface, StringObjectWithoutID, Stringable } from "./types.js";
 
 type ObserveMultiplexerOptions = {
   ordered: boolean,
   onStop?: Function
 }
 
-export class ObserveMultiplexer<T extends { _id: Stringable }> implements ObserveChangesObserver<T>, ObserveMultiplexerInterface<T>{
+export class ObserveMultiplexer<
+  ID extends Stringable,
+  T extends StringObjectWithoutID = StringObjectWithoutID,
+  TID extends { _id: Stringable } & T = { _id: Stringable } & T
+> implements ObserveChangesObserver<T>, ObserveMultiplexerInterface<ID, T>{
   _ordered: boolean;
   #handles = new Set<ObserveChangesObserver<T>>();
 
   #pendingAdds: number = 0;
   #queue: AsynchronousQueue = new AsynchronousQueue();
-  #cache: CachingChangeObserver<T>;
+  #cache: CachingChangeObserver<TID>;
   #isReady: boolean = false;
   #ready: Promise<void>;
   #onStop: Function | undefined;
@@ -29,7 +33,7 @@ export class ObserveMultiplexer<T extends { _id: Stringable }> implements Observ
     onStop,
   }: ObserveMultiplexerOptions) {
     this._ordered = ordered;
-    this.#cache = new CachingChangeObserverImpl({ ordered });
+    this.#cache = new CachingChangeObserverImpl<TID>({ ordered });
     this.#ready = new Promise((resolve, reject) => {
       this.#resolve = resolve;
     });
@@ -82,16 +86,17 @@ export class ObserveMultiplexer<T extends { _id: Stringable }> implements Observ
   }
 
   #sendAdds = (handle: ObserveChangesObserver<T>) => {
-    this.#cache.forEach((doc: T, index: number) => {
+    this.#cache.forEach((doc) => {
       if (!this.#handles.has(handle)) {
         throw Error("handle got removed before sending initial adds!");
       }
-      const { _id } = doc;
+      const { _id, ...rest } = doc;
+
       if (this._ordered) {
-        handle.addedBefore(_id, doc, undefined);
+        handle.addedBefore(_id, rest as T, undefined);
       }
       else {
-        handle.added(_id, doc);
+        handle.added(_id, rest as T);
       }
     });
   }
@@ -135,15 +140,15 @@ export class ObserveMultiplexer<T extends { _id: Stringable }> implements Observ
     return true;
   }
 
-  has(id: Stringable): Promise<boolean> {
+  has(id: ID): Promise<boolean> {
     return this.#queue.runTask(() => this.#cache.getDocs().has(id));
   }
 
-  getDocs() : Promise<OrderedDict<T> | StringableIdMap<T>> {
+  getDocs(): Promise<OrderedDict<Stringable, TID> | StringableIdMap<TID>> {
     return this.#queue.runTask(() => this.#cache.getDocs());
   }
 
-  get(id: Stringable): Promise<T | undefined> {
+  get(id: Stringable): Promise<TID | undefined> {
     return this.#queue.runTask(() => this.#cache.get(id));
   }
 
@@ -153,7 +158,7 @@ export class ObserveMultiplexer<T extends { _id: Stringable }> implements Observ
 
   // #region observer hooks
 
-  movedBefore(id: T["_id"], before: T["_id"] | undefined) {
+  movedBefore(id: Stringable, before: Stringable | undefined) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
@@ -163,22 +168,22 @@ export class ObserveMultiplexer<T extends { _id: Stringable }> implements Observ
     });
   }
 
-  addedBefore(id: T["_id"], doc: T, before?: T["_id"]) {
+  addedBefore(id: Stringable, doc: Omit<T, "_id">, before?: Stringable) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
       }
-      this.#cache.addedBefore(id, doc, before);
+      this.#cache.addedBefore(id, { _id: id, ...doc } as TID, before);
       await Promise.all(Array.from(this.#handles.values()).map(handle => handle.observes("addedBefore") && handle.addedBefore(id, doc, before)));
     });
   }
 
-  added(id: T["_id"], doc: T) {
+  added(id: Stringable, doc: Omit<T, "_id">) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
       }
-      this.#cache.added(id, doc);
+      this.#cache.added(id, { _id: id, ...doc } as TID);
       Array.from(this.#handles.values()).map(handle => {
         if (handle.observes("added")) {
           handle.added(id, doc);
@@ -190,17 +195,17 @@ export class ObserveMultiplexer<T extends { _id: Stringable }> implements Observ
     });
   }
 
-  changed(id: T["_id"], fields: Partial<T>) {
+  changed(id: Stringable, fields: Partial<Omit<T, "_id">>) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
       }
-      this.#cache.changed(id, fields);
+      this.#cache.changed(id, fields as Partial<TID>);
       Array.from(this.#handles.values()).map(handle => handle.observes("changed") && handle.changed(id, fields));
     });
   }
 
-  removed(id: T["_id"]) {
+  removed(id: Stringable) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;

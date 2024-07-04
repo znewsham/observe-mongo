@@ -1,5 +1,5 @@
 import type { Collection, FindCursor } from "mongodb";
-import { MinimalCollection, ObserveCallbacks, ObserveChangesCallbacks, ObserveDriver, ObserveHandle, ObserveOptions, Observer, Stringable, naiveClone } from "./types.js";
+import { MinimalCollection, ObserveCallbacks, ObserveChangesCallbacks, ObserveDriver, ObserveHandle, ObserveMultiplexerInterface, ObserveOptions, Observer, Stringable, naiveClone } from "./types.js";
 import { ObserveMultiplexer } from "./multiplexer.js";
 import { ObserveHandleImpl } from "./handle.js";
 import { PollingDriver } from "./pollingDriver.js";
@@ -7,14 +7,14 @@ import { CachingChangeObserverImpl } from "./cachingChangeObserver.js";
 import { applyChanges } from "./diff.js";
 
 
-export const observerMultiplexers = new Map<string, ObserveMultiplexer<{ _id: Stringable }>>();
+export const observerMultiplexers = new Map<string, ObserveMultiplexer<Stringable>>();
 
 let nextMultiplexerId = 1;
 
 export async function observeChanges<T extends { _id: Stringable }>(
   cursor: FindCursor<T>,
   collection: MinimalCollection<{ _id?: Stringable }>,
-  callbacks: ObserveChangesCallbacks<Omit<T, "_id">>,
+  callbacks: ObserveChangesCallbacks<T>,
   options: Omit<ObserveOptions<T>, "transform"> = {}
 ) : Promise<ObserveHandle> {
   const {
@@ -27,10 +27,10 @@ export async function observeChanges<T extends { _id: Stringable }>(
   const id = multiplexerId(cursor, collection, options);
 
   const existingMultiplexer = observerMultiplexers.get(id);
-  let multiplexer: ObserveMultiplexer<T>;
+  let multiplexer: ObserveMultiplexer<T["_id"], T>;
   let driver: ObserveDriver<T> | undefined;
   if (existingMultiplexer) {
-    multiplexer = existingMultiplexer as unknown as ObserveMultiplexer<T>;
+    multiplexer = existingMultiplexer as unknown as ObserveMultiplexer<T["_id"], T>;
   }
   else {
     if (!driverClass) {
@@ -40,7 +40,7 @@ export async function observeChanges<T extends { _id: Stringable }>(
       ...options,
       ordered
     });
-    multiplexer = new ObserveMultiplexer<T>({
+    multiplexer = new ObserveMultiplexer({
       ordered: ordered || false,
       onStop() {
         observerMultiplexers.delete(id);
@@ -51,7 +51,7 @@ export async function observeChanges<T extends { _id: Stringable }>(
     });
   }
 
-  observerMultiplexers.set(id, multiplexer as unknown as ObserveMultiplexer<{ _id: Stringable }>);
+  observerMultiplexers.set(id, multiplexer as unknown as ObserveMultiplexer<Stringable>);
 
   const handle = new ObserveHandleImpl(
     multiplexer,

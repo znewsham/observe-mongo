@@ -44,7 +44,6 @@ export class StringableIdMap<T> extends Map<string, T> {
         if (next.done) {
           return next;
         }
-        console.log("from", next.value[0], fromStringId(next.value[0]));
         return {
           done: false,
           value: [fromStringId(next.value[0]), next.value[1]]

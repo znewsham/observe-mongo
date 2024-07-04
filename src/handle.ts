@@ -1,19 +1,21 @@
 import { ObserveMultiplexer } from "./multiplexer.js";
 import { Clone, ObserveChangesCallbacks, ObserveChangesObserver, ObserveHandle, Stringable, naiveClone } from "./types.js";
 
-export class ObserveHandleImpl<T extends { _id: Stringable }> implements ObserveChangesObserver<T>, ObserveHandle {
+export class ObserveHandleImpl<
+  T extends { _id: Stringable }
+> implements ObserveChangesObserver<T>, ObserveHandle {
   static nextObserveHandleId: number = 1;
-  _multiplexer: ObserveMultiplexer<T>;
+  _multiplexer: ObserveMultiplexer<T["_id"], T>;
   _id: number = ObserveHandleImpl.nextObserveHandleId++;
   _stopped: boolean = false;
-  #callbacks: ObserveChangesCallbacks<Omit<T, "_id">>;
+  #callbacks: ObserveChangesCallbacks<T>;
   #clone: Clone = naiveClone;
 
   nonMutatingCallbacks: boolean;
 
   constructor(
-    multiplexer: ObserveMultiplexer<T>,
-    callbacks: ObserveChangesCallbacks<Omit<T, "_id">>,
+    multiplexer: ObserveMultiplexer<T["_id"], T>,
+    callbacks: ObserveChangesCallbacks<T>,
     nonMutatingCallbacks?: boolean,
     clone: Clone | undefined = naiveClone
   ) {
@@ -35,12 +37,12 @@ export class ObserveHandleImpl<T extends { _id: Stringable }> implements Observe
     return !!this.#callbacks[hookName];
   }
 
-  added(_id: T["_id"], doc: T) {
+  added(_id: T["_id"], doc: Omit<T, "_id">) {
     if (this.#callbacks.added) {
       this.#callbacks.added(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc));
     }
   }
-  addedBefore(_id: T["_id"], doc: T, before?: T["_id"]) {
+  addedBefore(_id: T["_id"], doc: Omit<T, "_id">, before?: T["_id"]) {
     if (this.#callbacks.addedBefore) {
       this.#callbacks.addedBefore(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc), before);
     }
@@ -52,7 +54,7 @@ export class ObserveHandleImpl<T extends { _id: Stringable }> implements Observe
     }
   }
 
-  changed(_id: T["_id"], fields: Partial<T>) {
+  changed(_id: T["_id"], fields: Partial<Omit<T, "_id">>) {
     if (this.#callbacks.changed) {
       this.#callbacks.changed(_id, this.nonMutatingCallbacks ? fields : this.#clone(fields));
     }

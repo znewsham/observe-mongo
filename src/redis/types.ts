@@ -32,11 +32,15 @@ export type RedisDelete<T extends { _id: Stringable }> = {
 
 export type RedisMessage<T extends { _id: Stringable } = { _id: Stringable }> = RedisUpdate<T> | RedisInsert<T> | RedisDelete<T>;
 
-export type RedisSubscriber<T extends { _id: Stringable } = { _id: Stringable }> = {
+export type RedisSubscriber<
+  T extends { _id: Stringable } = { _id: Stringable },
+  SortT extends Document = Document,
+  FilterT extends Document = Document
+> = {
   channels: string[],
-  collection: Pick<Collection<T>, "findOne">,
+  collection: Pick<Collection<T & SortT & FilterT>, "findOne">,
   completeProjection: Document,
-  process(channel: string, message: RedisMessage<T>, options: { optimistic: boolean }): void;
+  process(channel: string, message: RedisMessage<T & SortT & FilterT>, options: { optimistic: boolean }): void;
 };
 
 export type PubSubManager = {

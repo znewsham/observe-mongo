@@ -11,7 +11,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
   #pollingInterval: NodeJS.Timeout | undefined;
   #pollingIntervalTime = 5000;
   #ordered: boolean;
-  #multiplexer: ObserveMultiplexerInterface<T> | undefined;
+  #multiplexer: ObserveMultiplexerInterface<T["_id"], T> | undefined;
   #options: ObserveOptions<T>;
   #running: boolean = false;
   // #docs: OrderedDict<T> | StringableIdMap<T>
@@ -29,7 +29,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
     this.#options = options;
   }
 
-  async init(multiplexer: ObserveMultiplexerInterface<T>): Promise<void> {
+  async init(multiplexer: ObserveMultiplexerInterface<T["_id"], T>): Promise<void> {
     this.#multiplexer = multiplexer;
     await this.#cursor.forEach(doc => {
       if (this.#ordered) {
@@ -73,15 +73,16 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
     if (!this.#multiplexer) {
       throw new Error("Can't be missing a multiplexer");
     }
-    const newDocs = this.#ordered ? new OrderedDict<T>() : new StringableIdMap<T>();
+    const newDocs = this.#ordered ? new OrderedDict<T["_id"], T>() : new StringableIdMap<T>();
     await this.#cursor.forEach((doc) => {
       newDocs.set(doc._id, doc);
     });
     await this.#multiplexer.flush();
     if (this.#ordered) {
+      const iterator =
       diffQueryOrderedChanges<T>(
-        Array.from(await this.#multiplexer.getDocs() as OrderedDict<T>),
-        Array.from(newDocs as OrderedDict<T>),
+        Array.from((await this.#multiplexer.getDocs()).values()) as T[],
+        Array.from(newDocs.values()),
         this.#multiplexer,
         {
           equals: this.#options.equals,
