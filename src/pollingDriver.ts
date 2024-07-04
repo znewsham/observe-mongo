@@ -20,7 +20,12 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
     _collection: any,
     options: ObserveOptions<T> & { ordered: boolean, pollingInterval?: number }
   ) {
-    this.#cursor = cursor.clone();
+    if (options.cloneCursor !== false) {
+      this.#cursor = cursor.clone();
+    }
+    else {
+      this.#cursor = cursor;
+    }
     if (options.retainCursorMap !== false && cursor._mapTransform) {
       this.#cursor.map(cursor._mapTransform);
     }

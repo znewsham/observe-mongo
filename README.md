@@ -35,6 +35,28 @@ async function observe() {
 }
 ```
 
+Since the `map` function of a mongo cursor simpl returns another cursor (actually the same cursor with a transform set), it's possible to do things like:
+
+```typescript
+async function observe() {
+  const handle = await observe(
+    collection.find<{ _id: string, x: number, y: number }>().map(({ _id, x, y }) => ({ _id, result: x * y })),
+    collection,
+    {
+      added(({ result })) {
+
+      },
+      changed({ result }) {
+
+      }
+    },
+    {
+      cloneCursor: false
+    }
+  );
+```
+
+
 ## Requirements
 The key requirement of this package is the cursor requires a `cursorDescription` of this shape:
 
@@ -85,8 +107,11 @@ type ObserveOptions<T extends { _id: Stringable }> = {
   clone?: Clone,
   equals?: Equals,
   transform?: <T>(doc: T) => T,
-  driverClass?: ObserveDriverConstructor<T>
-  multiplexerId?: (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>) => string
+  driverClass?: ObserveDriverConstructor<T>,
+  multiplexerId?: (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>), => string,
+  retainCursorMap?: boolean,
+  nonMutatingCallbacks?: boolean,
+  suppressInitial?: boolean,
 };
 ```
 
@@ -96,9 +121,13 @@ The options are as follows:
 - `ordered` - whether or not the callbacks are "ordered", by default this will be determined by the callbacks provided.
 - `clone` - an implementation of clone, defaults to `JSON.parse(JSON.stringify(...))` - but this could be `EJSON`
 - `equals` - as with `clone`
-- `transform` - an arbitrary transformation, likely the one on the cursor itself.
+- `transform` - an arbitrary transformation, likely the one on the cursor itself - only used for `observe`.
 - `driverClass` - by default you get a polling driver - but there's one available that's compatible with redis-oplog.
 - `multiplexerId` - Like Meteor, we'll reuse the multiplexer to reduce memory usage, this defaults to a random ID, but it can be configured to dedupe based on the cursor description.
+- `retainCursorMap` - Cloning a mongo cursor loses the map function. If the cursor exposes a `_mapTransform` getter, should it be used - defaults to `true`
+- `cloneCursor` - defaults to `true`
+- `nonMutatingCallbacks` - By default arguments will be cloned before being sent to the handles. Unless you provide `nonMutatingCallbacks: true`.
+- `suppressInitial` - will skip the initial doc adds and will just observe changes from this point forwards.
 
 
 ### Redis-oplog

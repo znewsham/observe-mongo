@@ -127,8 +127,13 @@ export type ObserveOptions<T extends { _id: Stringable }> = {
    * cursor.find().map().clone loses the map - if you're using
    * @default: true
    */
-
   retainCursorMap?: boolean
+
+  /**
+   * Whether to clone the cursor or not - if you want to use the map function of the cursor - and the cursor wont be used by anything else, you can specify the cursor should not be cloned.
+   * @default: true
+   */
+  cloneCursor?: boolean
   driverClass?: ObserveDriverConstructor<T>
   multiplexerId?: (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>) => string
 };
