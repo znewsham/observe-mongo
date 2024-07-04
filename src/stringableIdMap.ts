@@ -1,20 +1,23 @@
 import { Stringable, fromStringId, stringId } from "./types.js";
 
-export class StringableIdMap<T> extends Map<string, T> {
-  constructor(entries?: [Stringable, T][]) {
+export class StringableIdMap<ID extends Stringable, T> extends Map<string, T> {
+  constructor(entries?: [ID, T][]) {
     super(entries?.map(([key, value]) => [stringId(key), value]));
   }
 
-  delete(key: Stringable): boolean {
+  delete(key: ID | string): boolean {
     return super.delete(stringId(key));
   }
-  get(key: Stringable): T | undefined {
+
+  get(key: ID | string): T | undefined {
     return super.get(stringId(key));
   }
-  has(key: Stringable): boolean {
+
+  has(key: ID | string): boolean {
     return super.has(stringId(key));
   }
-  set(key: Stringable, value: T): this {
+
+  set(key: ID | string, value: T): this {
     super.set(stringId(key), value);
     return this;
   }
@@ -24,19 +27,36 @@ export class StringableIdMap<T> extends Map<string, T> {
   }
 
   // @ts-expect-error
-  forEach(callbackfn: (value: T, key: Stringable, map: StringableIdMap<T>) => void, thisArg?: any): void {
+  keys(): IterableIterator<ID> {
+    const iterator = super.keys();
+    return {
+      next() {
+        const next = iterator.next();
+        if (next.done) {
+          return next;
+        }
+        return { next: false, value: fromStringId(next.value) as ID}
+      },
+      [Symbol.iterator]() {
+        return this;
+      }
+    }
+  }
+
+  // @ts-expect-error
+  forEach(callbackfn: (value: T, key: ID, map: StringableIdMap<T>) => void, thisArg?: any): void {
     super.forEach((value: T, key: string) => {
-      callbackfn.call(thisArg, value, fromStringId(key), this);
+      callbackfn.call(thisArg, value, fromStringId(key) as ID, this);
     });
   }
 
   // @ts-expect-error
-  [Symbol.iterator](): Iterator<[Stringable, T]> {
+  [Symbol.iterator](): Iterator<[ID, T]> {
     return this.entries();
   }
 
   // @ts-expect-error
-  entries(): IterableIterator<[Stringable, T]> {
+  entries(): IterableIterator<[ID, T]> {
     const superIterator = super.entries();
     return {
       next() {
@@ -46,7 +66,7 @@ export class StringableIdMap<T> extends Map<string, T> {
         }
         return {
           done: false,
-          value: [fromStringId(next.value[0]), next.value[1]]
+          value: [fromStringId(next.value[0]) as ID, next.value[1]]
         };
       },
       [Symbol.iterator]() {

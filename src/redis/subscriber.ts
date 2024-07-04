@@ -221,8 +221,7 @@ export class RedisObserverDriver<
 
         return;
       }
-      const { _id, ...docMinusId } = multiDoc;
-      return docMinusId as unknown as ET;
+      return multiDoc;
     }
     throw new Error("Neither docs, nor multiplexer");
   }
@@ -596,7 +595,7 @@ export class RedisObserverDriver<
     }
   }
 
-  async init(multiplexer: ObserveMultiplexerInterface<T["_id"], T>): Promise<void> {
+  async init(multiplexer: ObserveMultiplexerInterface<T["_id"], Omit<T, "_id">>): Promise<void> {
     this.#manager.attach<T, SortT, FilterT>(this);
     const localMultiplexer = multiplexer as unknown as ObserveMultiplexerInterface<T["_id"], ET>;
     this.#multiplexer = localMultiplexer;

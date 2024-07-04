@@ -11,20 +11,19 @@ type ObserveMultiplexerOptions = {
 
 export class ObserveMultiplexer<
   ID extends Stringable,
-  T extends StringObjectWithoutID = StringObjectWithoutID,
-  TID extends { _id: Stringable } & T = { _id: Stringable } & T
-> implements ObserveChangesObserver<T>, ObserveMultiplexerInterface<ID, T>{
+  T extends StringObjectWithoutID = StringObjectWithoutID
+> implements ObserveChangesObserver<ID, T>, ObserveMultiplexerInterface<ID, T>{
   _ordered: boolean;
-  #handles = new Set<ObserveChangesObserver<T>>();
+  #handles = new Set<ObserveChangesObserver<ID, T>>();
 
   #pendingAdds: number = 0;
   #queue: AsynchronousQueue = new AsynchronousQueue();
-  #cache: CachingChangeObserver<TID>;
+  #cache: CachingChangeObserver<ID, T>;
   #isReady: boolean = false;
   #ready: Promise<void>;
   #onStop: Function | undefined;
   #stopped: boolean = false;
-  #hookNames = new Map<string, Set<ObserveChangesObserver<T>>>();
+  #hookNames = new Map<string, Set<ObserveChangesObserver<ID, T>>>();
 
   // @ts-expect-error
   #resolve: Function;
@@ -33,14 +32,14 @@ export class ObserveMultiplexer<
     onStop,
   }: ObserveMultiplexerOptions) {
     this._ordered = ordered;
-    this.#cache = new CachingChangeObserverImpl<TID>({ ordered });
+    this.#cache = new CachingChangeObserverImpl<ID, T>({ ordered });
     this.#ready = new Promise((resolve, reject) => {
       this.#resolve = resolve;
     });
     this.#onStop = onStop;
   }
 
-  async addHandleAndSendInitialAdds(handle: ObserveChangesObserver<T>): Promise<void> {
+  async addHandleAndSendInitialAdds(handle: ObserveChangesObserver<ID, T>): Promise<void> {
     if (this.#stopped) {
       throw new Error("This multiplexer is stopped");
     }
@@ -67,7 +66,7 @@ export class ObserveMultiplexer<
     this.#pendingAdds--;
   }
 
-  removeHandle(handle: ObserveChangesObserver<T>) {
+  removeHandle(handle: ObserveChangesObserver<ID, T>) {
     handle
     this.#handles.delete(handle)
     this.#hookNames.forEach((handleSet, hookName) => {
@@ -85,18 +84,17 @@ export class ObserveMultiplexer<
     return this._ordered ? ["addedBefore", "changed", "movedBefore", "removed"] : ["added", "changed", "removed"]
   }
 
-  #sendAdds = (handle: ObserveChangesObserver<T>) => {
-    this.#cache.forEach((doc) => {
+  #sendAdds = (handle: ObserveChangesObserver<ID, T>) => {
+    this.#cache.forEach((doc, _id) => {
       if (!this.#handles.has(handle)) {
         throw Error("handle got removed before sending initial adds!");
       }
-      const { _id, ...rest } = doc;
 
       if (this._ordered) {
-        handle.addedBefore(_id, rest as T, undefined);
+        handle.addedBefore(_id, doc, undefined);
       }
       else {
-        handle.added(_id, rest as T);
+        handle.added(_id, doc);
       }
     });
   }
@@ -144,11 +142,11 @@ export class ObserveMultiplexer<
     return this.#queue.runTask(() => this.#cache.getDocs().has(id));
   }
 
-  getDocs(): Promise<OrderedDict<Stringable, TID> | StringableIdMap<TID>> {
+  getDocs(): Promise<OrderedDict<ID, T> | StringableIdMap<ID, T>> {
     return this.#queue.runTask(() => this.#cache.getDocs());
   }
 
-  get(id: Stringable): Promise<TID | undefined> {
+  get(id: ID): Promise<T | undefined> {
     return this.#queue.runTask(() => this.#cache.get(id));
   }
 
@@ -158,7 +156,7 @@ export class ObserveMultiplexer<
 
   // #region observer hooks
 
-  movedBefore(id: Stringable, before: Stringable | undefined) {
+  movedBefore(id: ID, before: ID | undefined) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
@@ -168,22 +166,22 @@ export class ObserveMultiplexer<
     });
   }
 
-  addedBefore(id: Stringable, doc: Omit<T, "_id">, before?: Stringable) {
+  addedBefore(id: ID, doc: T, before?: ID) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
       }
-      this.#cache.addedBefore(id, { _id: id, ...doc } as TID, before);
+      this.#cache.addedBefore(id, doc, before);
       await Promise.all(Array.from(this.#handles.values()).map(handle => handle.observes("addedBefore") && handle.addedBefore(id, doc, before)));
     });
   }
 
-  added(id: Stringable, doc: Omit<T, "_id">) {
+  added(id: ID, doc: T) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
       }
-      this.#cache.added(id, { _id: id, ...doc } as TID);
+      this.#cache.added(id, doc);
       Array.from(this.#handles.values()).map(handle => {
         if (handle.observes("added")) {
           handle.added(id, doc);
@@ -195,17 +193,17 @@ export class ObserveMultiplexer<
     });
   }
 
-  changed(id: Stringable, fields: Partial<Omit<T, "_id">>) {
+  changed(id: ID, fields: Partial<T>) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;
       }
-      this.#cache.changed(id, fields as Partial<TID>);
+      this.#cache.changed(id, fields);
       Array.from(this.#handles.values()).map(handle => handle.observes("changed") && handle.changed(id, fields));
     });
   }
 
-  removed(id: Stringable) {
+  removed(id: ID) {
     this.#queue.queueTask(async () => {
       if (this.#handles.size === 0) {
         return;

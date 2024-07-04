@@ -1,38 +1,40 @@
 import { applyChanges } from "./diff.js";
 import { OrderedDict } from "./orderedDict.js";
 import { StringableIdMap } from "./stringableIdMap.js";
-import { CachingChangeObserver, OrderedObserveChangesCallbacks, SharedObserveChangesCallbacks, Stringable } from "./types.js";
+import { CachingChangeObserver, OrderedObserveChangesCallbacks, SharedObserveChangesCallbacks, StringObjectWithoutID, Stringable } from "./types.js";
 
-function assertIsOrderedDict<T extends { _id: Stringable }>(dict: OrderedDict<T["_id"], T> | StringableIdMap<T>): asserts dict is OrderedDict<T["_id"], T> {
+function assertIsOrderedDict<ID extends Stringable, T extends StringObjectWithoutID>(dict: OrderedDict<ID, T> | StringableIdMap<ID, T>): asserts dict is OrderedDict<ID, T> {
 
 }
 
-export class CachingChangeObserverImpl<T extends { _id: Stringable }> implements CachingChangeObserver<T> {
-  #docs: OrderedDict<T["_id"], T> | StringableIdMap<T>;
+export class CachingChangeObserverImpl<
+  ID extends Stringable,
+  T extends StringObjectWithoutID
+> implements CachingChangeObserver<ID, T> {
+  #docs: OrderedDict<ID, T> | StringableIdMap<ID, T>;
   #ordered: boolean;
 
   constructor({
     ordered
   }: { ordered: boolean}) {
     this.#ordered = ordered;
-    this.#docs = ordered ? new OrderedDict<T["_id"], T>() : new StringableIdMap<T>();
+    this.#docs = ordered ? new OrderedDict<ID, T>() : new StringableIdMap<ID, T>();
   }
 
-  forEach(iterator: (doc: T, index: number) => void): void {
-    let index = 0;
+  forEach(iterator: (doc: T, id: ID) => void): void {
     this.#docs.forEach((item, key) => {
-      iterator(item, index++);
+      iterator(item, key);
     });
   }
 
-  added(id: T["_id"], doc: Omit<T, "_id">): void {
+  added(id: ID, doc: T): void {
     if (this.#docs.has(id)) {
       throw new Error("This document already exists");
     }
-    this.#docs.set(id, { _id: id, ...doc } as T);
+    this.#docs.set(id, doc);
   }
 
-  addedBefore(id: T["_id"], doc: Omit<T, "_id">, before?: Stringable): void {
+  addedBefore(id: ID, doc: T, before?: ID): void {
     if (this.#docs.has(id)) {
       throw new Error("This document already exists");
     }
@@ -43,14 +45,14 @@ export class CachingChangeObserverImpl<T extends { _id: Stringable }> implements
       // this is an odd situation - but in some cases (e.g., with a limit + sort)
       // the driver may choose to use these callbacks even though they don't care about the order
       // it's weird, but do we really care?
-      this.#docs.set(id, { _id: id, ...doc } as T);
+      this.#docs.set(id, doc);
       return;
     }
     assertIsOrderedDict(this.#docs);
-    this.#docs.add(id, { _id: id, ...doc } as T, before);
+    this.#docs.add(id, doc, before);
   }
 
-  changed(id: T["_id"], fields: Partial<Omit<T, "_id">>): void {
+  changed(id: ID, fields: Partial<T>): void {
     const existing = this.#docs.get(id);
     if (!existing) {
       throw new Error("Changed a document that doesn't exist");
@@ -58,7 +60,7 @@ export class CachingChangeObserverImpl<T extends { _id: Stringable }> implements
     applyChanges(existing, fields);
   }
 
-  movedBefore(id: T["_id"], before?: Stringable): void {
+  movedBefore(id: ID, before?: ID): void {
     if (!this.#ordered) {
       // this is an odd situation - but in some cases (e.g., with a limit + sort)
       // the driver may choose to use these callbacks even though they don't care about the order
@@ -77,11 +79,11 @@ export class CachingChangeObserverImpl<T extends { _id: Stringable }> implements
     this.#docs.moveBefore(id, before);
   }
 
-  removed(id: T["_id"]): void {
+  removed(id: ID): void {
     this.#docs.delete(id);
   }
 
-  observes(hookName: "added" | keyof OrderedObserveChangesCallbacks<T> | keyof SharedObserveChangesCallbacks<T>): boolean {
+  observes(hookName: "added" | keyof OrderedObserveChangesCallbacks<ID, T> | keyof SharedObserveChangesCallbacks<ID, T>): boolean {
     // even though technically we only care about the relevant ordered vs unordered hooks
     // it seems unreasonable to push that logic out, when unordered can be considered a strict subset of ordered
     // i.e., ignore moves and convert addedBefore to added
@@ -94,7 +96,7 @@ export class CachingChangeObserverImpl<T extends { _id: Stringable }> implements
     return true;
   }
 
-  indexOf(id: Stringable) {
+  indexOf(id: ID) {
     if (!this.#ordered) {
       throw new Error("Can't get indexOf a document in an unordered map");
     }
@@ -106,12 +108,12 @@ export class CachingChangeObserverImpl<T extends { _id: Stringable }> implements
     return this.#docs.size;
   }
 
-  get(id: Stringable) {
+  get(id: ID) {
     const doc = this.#docs.get(id);
-    return { _id: id, ...doc } as T;
+    return doc;
   }
 
-  getDocs() : OrderedDict<T["_id"], T> | StringableIdMap<T> {
+  getDocs() : OrderedDict<ID, T> | StringableIdMap<ID, T> {
     return this.#docs;
   }
 }

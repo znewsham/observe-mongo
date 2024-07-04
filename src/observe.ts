@@ -14,7 +14,7 @@ let nextMultiplexerId = 1;
 export async function observeChanges<T extends { _id: Stringable }>(
   cursor: FindCursor<T>,
   collection: MinimalCollection<{ _id?: Stringable }>,
-  callbacks: ObserveChangesCallbacks<T>,
+  callbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>,
   options: Omit<ObserveOptions<T>, "transform"> = {}
 ) : Promise<ObserveHandle> {
   const {
@@ -27,10 +27,10 @@ export async function observeChanges<T extends { _id: Stringable }>(
   const id = multiplexerId(cursor, collection, options);
 
   const existingMultiplexer = observerMultiplexers.get(id);
-  let multiplexer: ObserveMultiplexer<T["_id"], T>;
+  let multiplexer: ObserveMultiplexer<T["_id"], Omit<T, "_id">>;
   let driver: ObserveDriver<T> | undefined;
   if (existingMultiplexer) {
-    multiplexer = existingMultiplexer as unknown as ObserveMultiplexer<T["_id"], T>;
+    multiplexer = existingMultiplexer as unknown as ObserveMultiplexer<T["_id"], Omit<T, "_id">>;
   }
   else {
     if (!driverClass) {
@@ -51,7 +51,7 @@ export async function observeChanges<T extends { _id: Stringable }>(
     });
   }
 
-  observerMultiplexers.set(id, multiplexer as unknown as ObserveMultiplexer<Stringable>);
+  observerMultiplexers.set(id, multiplexer as unknown as ObserveMultiplexer<T["_id"]>);
 
   const handle = new ObserveHandleImpl(
     multiplexer,
@@ -69,13 +69,13 @@ export async function observeChanges<T extends { _id: Stringable }>(
 }
 
 function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable }>(
-  observeCallbacks: ObserveCallbacks<T>,
+  observeCallbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>,
   {
     clone = naiveClone,
     ordered = observeCallbacksAreOrdered(observeCallbacks),
     transform: _transform
   }: ObserveOptions<T> = {}
-): { observeChangesCallbacks: ObserveChangesCallbacks<Omit<T, "_id">>, setSuppressed(suppressed: boolean): void } {
+): { observeChangesCallbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>, setSuppressed(suppressed: boolean): void } {
   const transform = _transform || ((doc:any) => doc);
   let suppressed = !!observeCallbacks._suppress_initial;
 
@@ -83,7 +83,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
     ordered
   });
 
-  let observeChangesCallbacks: ObserveChangesCallbacks<Omit<T, "_id">>;
+  let observeChangesCallbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>;
   if (ordered) {
     // The "_no_indices" option sets all index arguments to -1 and skips the
     // linear scans required to generate them.  This lets observers that don't
@@ -235,7 +235,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
 export async function observe<T extends { _id: Stringable }>(
   cursor: FindCursor<T>,
   collection: MinimalCollection<{ _id?: Stringable }>,
-  observeCallbacks: ObserveCallbacks<T>,
+  observeCallbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>,
   options: ObserveOptions<T> = {}
 ): Promise<ObserveHandle> {
   const { setSuppressed, observeChangesCallbacks } = observeChangesCallbacksFromObserveCallbacks(
@@ -254,7 +254,7 @@ export async function observe<T extends { _id: Stringable }>(
 }
 
 export async function observeFromObserveChanges<T extends { _id: Stringable }>(
-  observeCallbacks: ObserveCallbacks<T>,
+  observeCallbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>,
   observer: Observer<T>,
   options: ObserveOptions<T> = {}
 ): Promise<ObserveHandle> {
@@ -272,7 +272,7 @@ export async function observeFromObserveChanges<T extends { _id: Stringable }>(
 }
 
 
-export function observeCallbacksAreOrdered<T>(callbacks: ObserveCallbacks<T>) {
+export function observeCallbacksAreOrdered<T extends { _id: Stringable }>(callbacks: ObserveCallbacks<T["_id"], Omit<T, "_id">>) {
   if (callbacks.added && callbacks.addedAt) {
     throw new Error('Please specify only one of added() and addedAt()');
   }
@@ -293,7 +293,7 @@ export function observeCallbacksAreOrdered<T>(callbacks: ObserveCallbacks<T>) {
   );
 };
 
-export function observeChangesCallbacksAreOrdered<T>(callbacks: ObserveChangesCallbacks<T>) {
+export function observeChangesCallbacksAreOrdered<T extends { _id: Stringable }>(callbacks: ObserveChangesCallbacks<T["_id"], Omit<T, "_id">>) {
   if (callbacks.added && callbacks.addedBefore) {
     throw new Error('Please specify only one of added() and addedBefore()');
   }

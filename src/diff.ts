@@ -67,10 +67,10 @@ type DiffOptions = {
   projectionFn?: <T>(doc: T) => any
 }
 
-export function diffQueryUnorderedChanges<T>(
-  oldResults: StringableIdMap<T>,
-  newResults: StringableIdMap<T>,
-  observer: ObserveChangesObserver<T>,
+export function diffQueryUnorderedChanges<ID extends Stringable, T>(
+  oldResults: StringableIdMap<ID, T>,
+  newResults: StringableIdMap<ID, T>,
+  observer: ObserveChangesObserver<ID, T>,
   {
     projectionFn = doc => doc,
     clone = naiveClone,
@@ -113,7 +113,7 @@ export function diffQueryUnorderedChanges<T>(
 export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
   oldResults: Array<T>,
   newResults: Array<T>,
-  observer: ObserveChangesObserver<T>,
+  observer: ObserveChangesObserver<T["_id"], Omit<T, "_id">>,
   {
     projectionFn = doc => doc,
     clone = naiveClone,

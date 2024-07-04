@@ -7,7 +7,10 @@ function getCachingChangeObserver(ordered, items = [{ _id: "test1" }, { _id: "te
     ordered
   });
 
-  items.forEach(item => cachingChangeObserver.added(item._id, item));
+  items.forEach((item) => {
+    const { _id, ...rest } = item;
+    cachingChangeObserver.added(_id, rest);
+  });
   return cachingChangeObserver;
 }
 
@@ -19,8 +22,8 @@ describe("cachingChangeObserver", () => {
       const forEachMock = mock.fn();
       cachingChangeObserver.forEach(forEachMock);
       assert.deepEqual(
-        [[{ _id: "test1" }, 0], [{ _id: "test2" }, 1]],
-        forEachMock.mock.calls.map(c => c.arguments)
+        forEachMock.mock.calls.map(c => c.arguments),
+        [[{}, "test1"], [{}, "test2"]]
       );
     });
 
@@ -52,7 +55,7 @@ describe("cachingChangeObserver", () => {
       cachingChangeObserver.addedBefore("test3", { _id: "test3" }, "test1");
       assert.strictEqual(cachingChangeObserver.size(), 3);
       // non ordered observers ignore the "before"
-      assert.deepEqual([...cachingChangeObserver.getDocs()][0][1], ordered ? { _id: "test3" } : { _id: "test1" });
+      assert.deepEqual([...cachingChangeObserver.getDocs()][0][0], ordered ? "test3" : "test1");
       assert.throws(
         () => cachingChangeObserver.addedBefore("test3", { _id: "test3" }, "test1"),
         /This document already exists/,
@@ -72,7 +75,7 @@ describe("cachingChangeObserver", () => {
     it(`changed should work when using ${orderedMessage}`, () => {
       const cachingChangeObserver = getCachingChangeObserver(ordered);
       cachingChangeObserver.changed("test1", { a: true });
-      assert.deepEqual([...cachingChangeObserver.getDocs().values()][0], { _id: "test1", a: true });
+      assert.deepEqual([...cachingChangeObserver.getDocs().values()][0], { a: true });
       assert.throws(
         () => cachingChangeObserver.changed("test3", { a: true }),
         /Changed a document that doesn't exist/,
@@ -83,14 +86,14 @@ describe("cachingChangeObserver", () => {
     it(`movedBefore should work when using ${orderedMessage} and not specifying a before`, () => {
       const cachingChangeObserver = getCachingChangeObserver(ordered);
       cachingChangeObserver.movedBefore("test1");
-      assert.deepEqual([...cachingChangeObserver.getDocs().values()][1], ordered ? { _id: "test1" } : { _id: "test2" });
+      assert.deepEqual([...cachingChangeObserver.getDocs().keys()][1], ordered ? "test1" : "test2");
     });
 
     it(`movedBefore should work when using ${orderedMessage} and specifying a before that exists`, () => {
       const cachingChangeObserver = getCachingChangeObserver(ordered);
 
       cachingChangeObserver.movedBefore("test2", "test1");
-      assert.deepEqual([...cachingChangeObserver.getDocs().values()][0], ordered ? { _id: "test2" } : { _id: "test1" });
+      assert.deepEqual([...cachingChangeObserver.getDocs().keys()][0], ordered ? "test2" : "test1");
     });
 
     if (ordered) {

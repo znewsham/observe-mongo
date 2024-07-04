@@ -18,7 +18,7 @@ type NoID<T> = T extends { _id: any } ? never : T;
 export class OrderedDict<
   ID extends Stringable,
   T extends Exactly<StringObjectWithoutID, StringObjectWithoutID>
-> implements Iterable<[Stringable, T]> {
+> implements Iterable<[ID, T]> {
   #keysToItems = new Map<string, Item<ID, T>>();
   #head: Item<ID, T> | undefined;
   #tail: Item<ID, T> | undefined;
@@ -35,7 +35,7 @@ export class OrderedDict<
     return this.#keysToItems.size;
   }
 
-  indexOf(id: Stringable): number {
+  indexOf(id: ID): number {
     let index = 0;
     const item = this.#keysToItems.get(stringId(id));
     if (!item) {
@@ -102,7 +102,7 @@ export class OrderedDict<
     this.#keysToItems.set(valueId, newItem);
   }
 
-  delete(id: Stringable) {
+  delete(id: ID) {
     const actualItem = this.#keysToItems.get(stringId(id));
     if (!actualItem) {
       return;
@@ -144,7 +144,7 @@ export class OrderedDict<
     }
   }
 
-  keys(): IterableIterator<Stringable> {
+  keys(): IterableIterator<ID> {
     const iterator = this[Symbol.iterator]();
     return {
       next() {
@@ -159,12 +159,12 @@ export class OrderedDict<
       [Symbol.iterator]() { return this; }
     }
   }
-  entries(): IterableIterator<[Stringable, T]> {
+  entries(): IterableIterator<[ID, T]> {
     return this[Symbol.iterator]();
   }
 
   // gnarly - but this ensures we expose the same iterator signature as StringableIdMap
-  [Symbol.iterator](): IterableIterator<[Stringable, T]> {
+  [Symbol.iterator](): IterableIterator<[ID, T]> {
     let head = this.#head;
     return {
       next() {
@@ -179,7 +179,7 @@ export class OrderedDict<
     }
   }
 
-  forEach(iterator: (item: T, key: Stringable) => void): void {
+  forEach(iterator: (item: T, key: ID) => void): void {
     for(let item of this) {
       if (item) {
         iterator(item[1], item[0]);

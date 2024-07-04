@@ -1,21 +1,22 @@
 import { ObserveMultiplexer } from "./multiplexer.js";
-import { Clone, ObserveChangesCallbacks, ObserveChangesObserver, ObserveHandle, Stringable, naiveClone } from "./types.js";
+import { Clone, ObserveChangesCallbacks, ObserveChangesObserver, ObserveHandle, StringObjectWithoutID, Stringable, naiveClone } from "./types.js";
 
 export class ObserveHandleImpl<
-  T extends { _id: Stringable }
-> implements ObserveChangesObserver<T>, ObserveHandle {
+  ID extends Stringable,
+  T extends StringObjectWithoutID
+> implements ObserveChangesObserver<ID, T>, ObserveHandle {
   static nextObserveHandleId: number = 1;
-  _multiplexer: ObserveMultiplexer<T["_id"], T>;
+  _multiplexer: ObserveMultiplexer<ID, T>;
   _id: number = ObserveHandleImpl.nextObserveHandleId++;
   _stopped: boolean = false;
-  #callbacks: ObserveChangesCallbacks<T>;
+  #callbacks: ObserveChangesCallbacks<ID, T>;
   #clone: Clone = naiveClone;
 
   nonMutatingCallbacks: boolean;
 
   constructor(
-    multiplexer: ObserveMultiplexer<T["_id"], T>,
-    callbacks: ObserveChangesCallbacks<T>,
+    multiplexer: ObserveMultiplexer<ID, T>,
+    callbacks: ObserveChangesCallbacks<ID, T>,
     nonMutatingCallbacks?: boolean,
     clone: Clone | undefined = naiveClone
   ) {
@@ -33,34 +34,34 @@ export class ObserveHandleImpl<
     this._stopped = true;
   }
 
-  observes(hookName: keyof ObserveChangesCallbacks<T>): boolean {
+  observes(hookName: keyof ObserveChangesCallbacks<ID, T>): boolean {
     return !!this.#callbacks[hookName];
   }
 
-  added(_id: T["_id"], doc: Omit<T, "_id">) {
+  added(_id: ID, doc: T) {
     if (this.#callbacks.added) {
       this.#callbacks.added(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc));
     }
   }
-  addedBefore(_id: T["_id"], doc: Omit<T, "_id">, before?: T["_id"]) {
+  addedBefore(_id: ID, doc: T, before?: ID) {
     if (this.#callbacks.addedBefore) {
       this.#callbacks.addedBefore(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc), before);
     }
   }
 
-  movedBefore(_id: T["_id"], before: T["_id"] | undefined) {
+  movedBefore(_id: ID, before: ID | undefined) {
     if (this.#callbacks.movedBefore) {
       this.#callbacks.movedBefore(_id, before);
     }
   }
 
-  changed(_id: T["_id"], fields: Partial<Omit<T, "_id">>) {
+  changed(_id: ID, fields: Partial<T>) {
     if (this.#callbacks.changed) {
       this.#callbacks.changed(_id, this.nonMutatingCallbacks ? fields : this.#clone(fields));
     }
   }
 
-  removed(_id: T["_id"]) {
+  removed(_id: ID) {
     if (this.#callbacks.removed) {
       this.#callbacks.removed(_id);
     }
