@@ -8,3 +8,4 @@ package-lock.json
 .coverage-report
 documenter.cjs
 docs
+__*
