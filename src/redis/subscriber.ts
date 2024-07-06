@@ -76,9 +76,9 @@ export class RedisObserverDriver<
   #sortProjectionFn: (projection: Document) => SortT;
   #transform: (doc: any) => ET;
 
-  // technically, #docs contains the document ID + the fields necessary to evaluate the sort.
-  // this doesn't necessarily intersect in any way with the projection fields which are
+  // down the road, we might merge sortDocs and docs - currently docs is totally unused and we rely on the multiplexer to track the current document
   #docs: OrderedDict<T["_id"], SortT & T> | undefined;
+  // #sortDocs contains the document ID + the fields necessary to evaluate the sort.
   #sortDocs: OrderedDict<T["_id"], SortT> | undefined;
   #strictRelevance: boolean;
   #multiplexer: ObserveMultiplexerInterface<T["_id"], ET> | undefined;
@@ -133,8 +133,7 @@ export class RedisObserverDriver<
     }
     // even if we don't care about order (e.g., a client side subscription) we'll still need an ordered dict when using limit + sort, wild!
     // Only #processLimitSortMessage will access this.#sortDocs
-    this.#docs = this.#strategy === Strategy.LIMIT_SORT ? new OrderedDict() : undefined;
-    this.#sortDocs = this.#docs;
+    this.#sortDocs = this.#strategy === Strategy.LIMIT_SORT ? new OrderedDict() : undefined;
     this.#projectionFn = this.#cursor.cursorDescription.options.projection
       ? options.compileProjection(this.#cursor.cursorDescription.options.projection)
       // If we have no projection defined, we want the entire document - if we want the entire document T and Exactly<T, T> are equivalent

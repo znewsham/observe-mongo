@@ -18,14 +18,16 @@ type SubscriptionEntry = {
   handle: (message: RedisMessage) => void
 };
 
-
+type SimpleStringable = string | number | ObjectId | Date;
 
 export class SubscriptionManager {
   #subscribers = new Map<string, SubscriptionEntry>();
   #pubSubManager: PubSubManager;
+  #uid: string;
 
-  constructor(pubSubManager: PubSubManager) {
+  constructor(pubSubManager: PubSubManager, uid?: string) {
     this.#pubSubManager = pubSubManager;
+    this.#uid = uid || `${Math.random()}`.slice(2);
   }
 
   attach<
@@ -87,6 +89,10 @@ export class SubscriptionManager {
     }
     if (!message[RedisPipe.EVENT]) {
       // this message isn't for us
+      return;
+    }
+    if (message[RedisPipe.UID] === this.#uid && !optimistic) {
+      // we should have already processed this
       return;
     }
 
