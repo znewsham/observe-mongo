@@ -335,22 +335,21 @@ export class RedisObserverDriver<
           const projectedDoc = this.#projectionFnWithoutId(actualDoc);
           const sortProjectedDoc = this.#sortProjectionFn(actualDoc);
           // TODO: go get the actual document - this should only happen once per requery.
-          const beforeValue = before !== undefined ? this.#docs?.get(before) : undefined;
           this.#sortDocs?.add(id, sortProjectedDoc, before);
           this.#multiplexer?.addedBefore(id, projectedDoc, before);
         },
 
         removed: (id) => {
-          const item = this.#docs?.get(id);
+          const item = this.#sortDocs?.get(id);
           if (!item) {
             return;
           }
-          this.#docs?.remove(item);
+          this.#sortDocs?.remove(item);
           this.#multiplexer?.removed(item._id);
         },
 
         movedBefore:(id, before) => {
-          const value = this.#docs?.get(id);
+          const value = this.#sortDocs?.get(id);
           if (!value) {
             return;
           }
