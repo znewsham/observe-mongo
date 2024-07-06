@@ -53,4 +53,5 @@ export type RedisFindOptions = {
   channels?: string[],
   namespace?: string,
   namespaces?: string[],
+  disableOplog?: boolean
 }

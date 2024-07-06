@@ -16,9 +16,9 @@ export { getChannels } from "./getChannels.js";
 
 export function canUseRedisOplog<T extends { _id: Stringable }>(
   cursor: FindCursorWithDescription<T>,
-  options: Pick<RedisObserverDriverOptions<T>, "Matcher">
+  options: Pick<RedisObserverDriverOptions<T>, "Matcher" | "disableOplog">
 ) {
-  if (cursor.cursorDescription.options?.disableOplog) {
+  if (options?.disableOplog) {
     return false;
   }
   if (cursor.cursorDescription.filter) {
