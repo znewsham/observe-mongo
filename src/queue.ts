@@ -30,9 +30,11 @@ class TaskHandle extends AsyncResource {
 export class AsynchronousQueue extends AsyncResource {
   #queue: TaskHandle[] = [];
   #running: boolean = false;
+  #errorHandler: (error: any) => void;
 
-  constructor() {
+  constructor(errorHandler: (error: any) => void = console.warn) {
     super("AsynchronousQueue");
+    this.#errorHandler = errorHandler;
   }
   async runTask<F extends any>(task: () => F | Promise<F>): Promise<F> {
     return new Promise((resolve, reject) => {
@@ -79,7 +81,7 @@ export class AsynchronousQueue extends AsyncResource {
           next.reject?.(error);
           // @ts-expect-error
           if (!next.reject) {
-            throw error;
+            this.#errorHandler(error);
           }
         });
       }
