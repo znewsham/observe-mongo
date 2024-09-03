@@ -3,7 +3,7 @@
   "exclude": ["src/__*"],
   "compilerOptions": {
     "outDir": "es2020",
-    "module": "CommonJS",
+    "module": "ES2020",
     "moduleResolution": "Node",
     "target": "ES2020",
     "declaration": true,

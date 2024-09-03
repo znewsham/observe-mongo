@@ -2,6 +2,7 @@ import type { Collection, ObjectId, Document, FindCursor, Filter } from "mongodb
 
 import {
   Events,
+  RedisPipe,
 } from "./constants.js";
 import { FindCursorWithOptionalMap, Stringable } from "../types.js";
 import { NestedProjectionOfTSchema, WithCursorDescription } from "mongo-collection-helpers";
@@ -11,22 +12,22 @@ export type FindCursorWithDescription<T> = Omit<FindCursorWithOptionalMap<T>, "c
 }
 
 export type RedisInsert<T extends { _id: Stringable }> = {
-  e: typeof Events.INSERT,
-  d: T,
-  u: string,
+  [RedisPipe.EVENT]: typeof Events.INSERT,
+  [RedisPipe.DOC]: T,
+  [RedisPipe.UID]: Stringable,
 };
 
 export type RedisUpdate<T extends { _id: Stringable }> = {
-  e: typeof Events.UPDATE,
-  d: T,
-  f: (keyof T & string)[],
-  u: string
+  [RedisPipe.EVENT]: typeof Events.UPDATE,
+  [RedisPipe.DOC]: T,
+  [RedisPipe.FIELDS]: (keyof T & string)[],
+  [RedisPipe.UID]: Stringable
 }
 
 export type RedisDelete<T extends { _id: Stringable }> = {
-  e: typeof Events.REMOVE,
-  d: { _id: T["_id"] },
-  u: string
+  [RedisPipe.EVENT]: typeof Events.REMOVE,
+  [RedisPipe.DOC]: { _id: T["_id"] },
+  [RedisPipe.UID]: Stringable
 }
 
 export type RedisMessage<T extends { _id: Stringable } = { _id: Stringable }> = RedisUpdate<T> | RedisInsert<T> | RedisDelete<T>;

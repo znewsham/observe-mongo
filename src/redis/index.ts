@@ -10,6 +10,8 @@ export * from "./manager.js";
 export * from "./utils.js";
 
 export * from "./constants.js";
+export * from "./publish.js";
+export * from "./subManager.js";
 
 export { getChannels } from "./getChannels.js";
 

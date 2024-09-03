@@ -3,7 +3,7 @@
   "exclude": ["src/__*"],
   "compilerOptions": {
     "outDir": "es2015",
-    "module": "CommonJS",
+    "module": "ES2015",
     "moduleResolution": "Node",
     "target": "ES2015",
     "declaration": true,
@@ -16,6 +16,7 @@
     "allowJs": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "maxNodeModuleJsDepth": 2
+    "maxNodeModuleJsDepth": 2,
+    "importHelpers": true
   }
 }
