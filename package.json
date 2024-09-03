@@ -60,11 +60,11 @@
   "devDependencies": {
     "@blastjs/minimongo": "^0.1.0",
     "@types/node": "^20.14.9",
+    "mongo-collection-hooks": "^0.2.3",
     "mongodb": "^5.9.2",
-    "typescript": "^5.5.2",
-    "mongo-collection-hooks": "^0.2.3"
+    "typescript": "^5.5.2"
   },
   "dependencies": {
-    "mongo-collection-helpers": "^1.0.8"
+    "mongo-collection-helpers": "^1.0.9"
   }
 }
