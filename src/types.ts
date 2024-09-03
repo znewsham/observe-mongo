@@ -14,10 +14,11 @@ export const ObserveChangesCallbackNames: ObserveChangesCallbackKeys[] = [
 // we don't currently care about equals - but lots of things provide a "toString" - just not one that uniquely identifies the value.
 export type Stringable = string
   // | { _bsonType: "ObjectId" } | { get _bsonType(): "ObjectId" } - insanely annoying, maybe because of the _, but I can't make this work.
-  | { toHexString() : string } // this is a proxy for ObjectId - see above.
+  // | { toHexString() : string } // this is a proxy for ObjectId - see above.
   | Date
   | number
-  | { [k in string]: Stringable }
+  | ObjectId
+  | {[k in string]: Stringable }// Record<string, Stringable>
   | Stringable[];
 
 type EJSONItem = { $type: "oid", $value: string } | { $type: "date", $value: number }
@@ -31,12 +32,11 @@ function jsonable(stringable: Stringable): Item {
   if (stringable instanceof Date) {
     return { $type: "date", $value: stringable.getTime() };
   }
-  // @ts-expect-error
-  if (stringable._bsontype === "ObjectId") {
-    return { $type: "oid", $value: stringable.toString() };
-  }
   if (Array.isArray(stringable)) {
     return stringable.map(s => jsonable(s));
+  }
+  if (stringable._bsontype === "ObjectId") {
+    return { $type: "oid", $value: stringable.toString() };
   }
   return Object.fromEntries(Object.entries(stringable).map(([key, value]) => [key, jsonable(value)]));
 }
@@ -60,7 +60,7 @@ function jsonToObject(json: { $type: "oid" | "date", $value: any } | { [k in str
         throw new Error("You can't use ObjectId without providing a globalThis.ObjectId - come find this error code to find out more: '6683fce02d94bdf20801d560'")
       }
       // @ts-expect-error
-      return new globalThis.ObjectId(json.$value);
+      return new globalThis.ObjectId(json.$value) as ObjectId;
     }
     throw new Error(`Invalid $type: ${json.$type}`);
   }

@@ -1,6 +1,7 @@
+import { Stringable, stringId } from "../types.js";
 import { RedisOptions } from "./constants.js";
 
-export function getChannels(defaultChannel: string, options: RedisOptions = {}, docIds?: string[]) {
+export function getChannels(defaultChannel: string, options: RedisOptions = {}, docIds?: Stringable[]) {
   const channels: string[] = [];
   if (options.channel) {
     channels.push(options.channel);
@@ -18,7 +19,7 @@ export function getChannels(defaultChannel: string, options: RedisOptions = {}, 
   if (channels.length === 0) {
     channels.push(defaultChannel);
     if (docIds) {
-      docIds.forEach(docId => channels.push(`${defaultChannel}::${docId}`));
+      docIds.forEach(docId => channels.push(`${defaultChannel}::${typeof docId === "string" ? docId : stringId(docId)}`));
     }
   }
   return channels;

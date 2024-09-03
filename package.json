@@ -26,9 +26,9 @@
       "types": "./lib/redis/index.d.ts",
       "default": "./lib/redis/index.js"
     },
-    "./lib/redis": {
-      "types": "./lib/redis/index.d.ts",
-      "default": "./lib/redis/index.js"
+    "./redis/publish": {
+      "types": "./lib/redis/publish.d.ts",
+      "default": "./lib/redis/publish.js"
     },
     "./es2020": {
       "types": "./es2020/index.d.ts",
@@ -38,6 +38,10 @@
       "types": "./es2020/redis/index.d.ts",
       "default": "./es2020/redis/index.js"
     },
+    "./es2020/redis/publish": {
+      "types": "./es2020/redis/publish.d.ts",
+      "default": "./es2020/redis/publish.js"
+    },
     "./es2015": {
       "types": "./es2015/index.d.ts",
       "default": "./es2015/index.js"
@@ -45,6 +49,10 @@
     "./es2015/redis": {
       "types": "./es2015/redis/index.d.ts",
       "default": "./es2015/redis/index.js"
+    },
+    "./es2015/redis/publish": {
+      "types": "./es2015/redis/publish.d.ts",
+      "default": "./es2015/redis/publish.js"
     }
   },
   "author": "",
@@ -53,7 +61,8 @@
     "@blastjs/minimongo": "^0.1.0",
     "@types/node": "^20.14.9",
     "mongodb": "^5.9.2",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "mongo-collection-hooks": "^0.2.3"
   },
   "dependencies": {
     "mongo-collection-helpers": "^1.0.8"

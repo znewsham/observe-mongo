@@ -18,8 +18,6 @@ type SubscriptionEntry = {
   handle: (message: RedisMessage) => void
 };
 
-type SimpleStringable = string | number | ObjectId | Date;
-
 export class SubscriptionManager {
   #subscribers = new Map<string, SubscriptionEntry>();
   #pubSubManager: PubSubManager;
