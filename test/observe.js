@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { FakeCollection } from "mongo-collection-helpers/testHelpers";
 import { describe, it, mock } from "node:test";
 import assert from "node:assert";
@@ -5,6 +6,108 @@ import { setTimeout } from "node:timers/promises";
 import { observe } from "../lib/observe.js";
 
 describe("unordered observe", () => {
+  it("should correctly associate with the invoking async context", async () => {
+    const asyncStorage = new AsyncLocalStorage();
+    const data = [];
+    const collection = new FakeCollection(data);
+    let addedMock;
+    const addedPromise = new Promise((resolve) => {
+      addedMock = mock.fn(() => {
+        assert.strictEqual(asyncStorage.getStore(), "test");
+        resolve();
+      });
+    });
+    /**
+     * @type {FindCursor<{ _id: string, thing: string }>} cursor
+     */
+    const cursor = collection.find({});
+
+    // we set up a handle first so the driver exists outside - otherwise all events will exist within the context anyway
+    const preHandle = await observe(
+      cursor,
+      collection,
+      {
+      },
+      {
+        pollingInterval: 5,
+        multiplexerId: () => "test-shared"
+      }
+    );
+    const handle = await asyncStorage.run("test", () => {
+      return observe(
+        cursor,
+        collection,
+        {
+          added: addedMock
+        },
+        {
+          pollingInterval: 5,
+          multiplexerId: () => "test-shared"
+        }
+      );
+    });
+    preHandle.stop();
+    await collection.insertOne({ _id: "test3" });
+    await setTimeout(7);
+    await addedPromise;
+    assert.strictEqual(addedMock.mock.callCount(), 1, "should have seen the add");
+    handle.stop();
+  });
+  it("should NOT associate with the invoking async context", async () => {
+    const asyncStorage = new AsyncLocalStorage();
+    asyncStorage.enterWith("world");
+    const data = [];
+    const collection = new FakeCollection(data);
+    let addedMock;
+    const addedPromise = new Promise((resolve, reject) => {
+      assert.strictEqual(asyncStorage.getStore(), "world");
+      addedMock = mock.fn(() => {
+        try {
+          assert.strictEqual(asyncStorage.getStore(), "world");
+          resolve();
+        }
+        catch (e) {
+          reject(e);
+        }
+      });
+    });
+    /**
+     * @type {FindCursor<{ _id: string, thing: string }>} cursor
+     */
+    const cursor = collection.find({});
+
+    // we set up a handle first so the driver exists outside - otherwise all events will exist within the context anyway
+    const preHandle = await observe(
+      cursor,
+      collection,
+      {
+      },
+      {
+        pollingInterval: 5,
+        multiplexerId: () => "test-shared"
+      }
+    );
+    const handle = await asyncStorage.run("test", () => {
+      return observe(
+        cursor,
+        collection,
+        {
+          added: addedMock
+        },
+        {
+          pollingInterval: 5,
+          bindObserveEventsToAsyncResource: false,
+          multiplexerId: () => "test-shared"
+        }
+      );
+    });
+    preHandle.stop();
+    await collection.insertOne({ _id: "test3" });
+    await setTimeout(7);
+    await addedPromise;
+    assert.strictEqual(addedMock.mock.callCount(), 1, "should have seen the add");
+    handle.stop();
+  });
   it("additional adds are received", async () => {
     const data = [{ _id: "test" }, { _id: "test2" }];
     const collection = new FakeCollection(data);
@@ -51,7 +154,6 @@ describe("unordered observe", () => {
 
     await setTimeout(30);
     handle.stop();
-    console.log(changedMock.mock.calls.map(x => x.arguments));
     assert.strictEqual(changedMock.mock.callCount(), 1);
   });
   it("removes are received", async () => {

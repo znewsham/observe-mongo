@@ -30,11 +30,13 @@ class TaskHandle extends AsyncResource {
 export class AsynchronousQueue extends AsyncResource {
   #queue: TaskHandle[] = [];
   #running: boolean = false;
+  #bindTasksToQueueAsyncResource: boolean = false;
   #errorHandler: (error: any) => void;
 
-  constructor(errorHandler: (error: any) => void = console.warn) {
+  constructor(bindTasksToQueueAsyncResource = false, errorHandler: (error: any) => void = console.warn) {
     super("AsynchronousQueue");
     this.#errorHandler = errorHandler;
+    this.#bindTasksToQueueAsyncResource = bindTasksToQueueAsyncResource;
   }
   async runTask<F extends any>(task: () => F | Promise<F>): Promise<F> {
     return new Promise((resolve, reject) => {
@@ -66,9 +68,10 @@ export class AsynchronousQueue extends AsyncResource {
       this.#running = false;
       return;
     }
+    const asyncResource = this.#bindTasksToQueueAsyncResource ? this : next;
     do {
       try {
-        await next.runInAsyncScope(async () => {
+        await asyncResource.runInAsyncScope(async () => {
           // @ts-expect-error - ts thinks it can be undefined. It can't.
           const result = await next.task();
           // @ts-expect-error - ts thinks it can be undefined. It can't.
@@ -76,7 +79,7 @@ export class AsynchronousQueue extends AsyncResource {
         });
       }
       catch (error) {
-        next.runInAsyncScope(() => {
+        asyncResource.runInAsyncScope(() => {
           // @ts-expect-error - ts thinks it can be undefined. It can't.
           next.reject?.(error);
           // @ts-expect-error

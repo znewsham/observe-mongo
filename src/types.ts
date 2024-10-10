@@ -42,6 +42,10 @@ function jsonable(stringable: Stringable): Item {
 }
 // a poor mans EJSON. Maybe just suck it up and pull it in as a dependency
 export function stringId(stringable: Stringable): string {
+  if (typeof stringable === "string") {
+    // this ensures compatibility with anything (e.g., meteor) and the common case of
+    return stringable;
+  }
   return JSON.stringify(jsonable(stringable));
 }
 
@@ -71,6 +75,11 @@ function jsonToObject(json: { $type: "oid" | "date", $value: any } | { [k in str
 }
 
 export function fromStringId(id: string): Stringable {
+  if (!id.startsWith("[") && !id.startsWith("{")) {
+    // we're looking at a simple ID - either a string or a number.
+    // if it's a number, it's going to come out as a string, this...isn't great, but ensures compatibility with older systems
+    return id;
+  }
   const maybeObject = JSON.parse(id);
   if (typeof maybeObject === "object") {
     return jsonToObject(maybeObject);
@@ -135,7 +144,13 @@ export type ObserveOptions<T extends { _id: Stringable }> = {
    */
   cloneCursor?: boolean
   driverClass?: ObserveDriverConstructor<T>
-  multiplexerId?: (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>) => string
+  multiplexerId?: (cursor: FindCursor<T>, collection: MinimalCollection<{ _id?: Stringable }>, options: ObserveOptions<T>) => string,
+
+  /**
+   * Whether to bind observe events to an asyncResource created when the observe handle is defined (e.g., all callbacks will be associated with the invoking async resource)
+   * @default: true
+   */
+  bindObserveEventsToAsyncResource?: boolean
 };
 
 export type ObserveOnlyOptions = {
