@@ -35,7 +35,7 @@ async function observe() {
 }
 ```
 
-Since the `map` function of a mongo cursor simpl returns another cursor (actually the same cursor with a transform set), it's possible to do things like:
+Since the `map` function of a mongo cursor simply returns another cursor (actually the same cursor with a transform set), it's possible to do things like:
 
 ```typescript
 async function observe() {
@@ -112,6 +112,7 @@ type ObserveOptions<T extends { _id: Stringable }> = {
   retainCursorMap?: boolean,
   nonMutatingCallbacks?: boolean,
   suppressInitial?: boolean,
+  bindObserveEventsToAsyncResource?: boolean
 };
 ```
 

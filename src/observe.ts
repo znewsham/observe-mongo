@@ -71,12 +71,13 @@ export async function observeChanges<T extends { _id: Stringable }>(
 
   observerMultiplexers.set(id, multiplexer as unknown as ObserveMultiplexer<T["_id"]>);
 
-  const handle = new ObserveHandleImpl(
+  const handle = new ObserveHandleImpl({
     multiplexer,
     callbacks,
     nonMutatingCallbacks,
-    options.clone
-  );
+    clone: options.clone,
+    bindObserveEventsToAsyncResource: options.bindObserveEventsToAsyncResource
+  });
 
   const initialSendAddsPromise = multiplexer.addHandleAndSendInitialAdds(handle);
   if (driver) {

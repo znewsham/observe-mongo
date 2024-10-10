@@ -84,6 +84,7 @@ export class RedisObserverDriver<
   #multiplexer: ObserveMultiplexerInterface<T["_id"], ET> | undefined;
 
   #channels: string[];
+  #mapTransform: (projection: Document) => T = doc => doc as T;
 
   static MAX_SORT_LENGTH = 1000;
 
@@ -104,6 +105,7 @@ export class RedisObserverDriver<
     }
     if (options.retainCursorMap !== false && cursor._mapTransform) {
       this.#cursor.map(cursor._mapTransform);
+      this.#mapTransform = cursor._mapTransform as (doc: Document) => T;
     }
     this.#ordered = options.ordered;
     this.#collection = collection;
@@ -190,7 +192,7 @@ export class RedisObserverDriver<
         return channels;
       case Strategy.DEDICATED_CHANNELS:
         const ids = Array.from(extractIdsFromSelector(this.#cursor.cursorDescription.filter || {})) as string[];
-        return ids.map(id => `${this.#collection.collectionName}::${stringId(id)}`);
+        return ids.map(id => `${this.#collection.collectionName}::${typeof id === "string" ? id : stringId(id)}`);
       default:
         throw new Error(
             `Strategy could not be found: ${this.#strategy}`
@@ -240,6 +242,11 @@ export class RedisObserverDriver<
     return this.#transform(rest) as unknown as ET;
   }
 
+  #projectionFnWithMapWithoutId(doc: T) {
+    const projected = this.#projectionFn(doc);
+    const { _id, ...rest } = this.#mapTransform(projected);
+    return this.#transform(rest);
+  }
   async #size(): Promise<number> {
     if (this.#docs) {
       return this.#docs.size;
@@ -258,14 +265,14 @@ export class RedisObserverDriver<
     if (message[RedisPipe.EVENT] === Events.INSERT) {
       const doc = message[RedisPipe.DOC];
       if (!await this.#has(doc._id) && this.#isDocEligible(doc)) {
-        this.#multiplexer.added(doc._id, this.#projectionFnWithoutId(doc));
+        this.#multiplexer.added(doc._id, this.#projectionFnWithMapWithoutId(doc));
       }
       return;
     }
     if (message[RedisPipe.EVENT] === Events.UPDATE) {
       const doc = message[RedisPipe.DOC];
       if (this.#isDocEligible(doc)) {
-        const projectedDoc = this.#projectionFnWithoutId(doc);
+        const projectedDoc = this.#projectionFnWithMapWithoutId(doc);
         if (await this.#has(doc._id)) {
           const original = await this.#get(doc._id);
           if (!original) {
@@ -332,7 +339,7 @@ export class RedisObserverDriver<
           if (!actualDoc) {
             return;
           }
-          const projectedDoc = this.#projectionFnWithoutId(actualDoc);
+          const projectedDoc = this.#projectionFnWithMapWithoutId(actualDoc);
           const sortProjectedDoc = this.#sortProjectionFn(actualDoc);
           // TODO: go get the actual document - this should only happen once per requery.
           this.#sortDocs?.add(id, sortProjectedDoc, before);
@@ -395,7 +402,7 @@ export class RedisObserverDriver<
           this.#sortProjectionFn(doc),
           this.#sortDocs.head?.key
         );
-        this.#multiplexer.addedBefore(doc._id, this.#projectionFnWithoutId(doc), oldHead?._id);
+        this.#multiplexer.addedBefore(doc._id, this.#projectionFnWithMapWithoutId(doc), oldHead?._id);
 
         if (options.limit && this.#sortDocs.size > options.limit && this.#sortDocs.tail) {
           const tail = this.#sortDocs.tail;
@@ -413,7 +420,7 @@ export class RedisObserverDriver<
       }
       else {
         this.#sortDocs.add(doc._id, this.#sortProjectionFn(doc));
-        this.#multiplexer?.addedBefore(doc._id, this.#projectionFnWithoutId(doc), undefined);
+        this.#multiplexer?.addedBefore(doc._id, this.#projectionFnWithMapWithoutId(doc), undefined);
       }
       return;
     }
@@ -434,7 +441,7 @@ export class RedisObserverDriver<
       const index = allDocs.indexOf(sortableDoc);
       const before = allDocs[index + 1];
       this.#sortDocs.add(this.#sortProjectionFn(doc), before);
-      this.#multiplexer.addedBefore(doc._id, this.#projectionFnWithoutId(doc), before?._id);
+      this.#multiplexer.addedBefore(doc._id, this.#projectionFnWithMapWithoutId(doc), before?._id);
       if (options.limit && this.#sortDocs.size > options.limit) {
         if (this.#sortDocs.tail) {
           const tail = this.#sortDocs.tail;
@@ -518,7 +525,7 @@ export class RedisObserverDriver<
           // this can happen if the requery kicks the document
           return;
         }
-        const projectedDoc = this.#projectionFnWithoutId(doc);
+        const projectedDoc = this.#projectionFnWithMapWithoutId(doc);
         const { changes, hasChanges } = makeChangedFields(
           original,
           projectedDoc
@@ -565,7 +572,7 @@ export class RedisObserverDriver<
     if (message[RedisPipe.EVENT] === Events.INSERT) {
       const doc = message[RedisPipe.DOC];
       if (!await this.#has(doc._id) && this.#isDocEligible(doc)) {
-        this.#multiplexer.added(doc._id, this.#projectionFnWithoutId(doc));
+        this.#multiplexer.added(doc._id, this.#projectionFnWithMapWithoutId(doc));
       }
     }
 
@@ -576,7 +583,7 @@ export class RedisObserverDriver<
       const has = await this.#has(message[RedisPipe.DOC]._id);
 
       const doc = message[RedisPipe.DOC];
-      const projectedDoc = this.#projectionFnWithoutId(doc);
+      const projectedDoc = this.#projectionFnWithMapWithoutId(doc);
       if (this.#isDocEligible(doc)) {
         if (has) {
           const original = await this.#get(message[RedisPipe.DOC]._id);
@@ -611,6 +618,7 @@ export class RedisObserverDriver<
     if (!this.#options.suppressInitial) {
       await cursor.forEach(doc => {
         this.#queue.queueTask(() => {
+          // the doc was transformed by the cursor map
           if (this.#ordered) {
             localMultiplexer.addedBefore(doc._id, this.#projectionFnWithoutId(doc), undefined);
           }
