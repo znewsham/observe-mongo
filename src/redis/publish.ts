@@ -132,7 +132,9 @@ export function applyRedis<TSchema extends Document & { _id: Stringable }>(
     args: [, options],
     _id
   }) => {
-    await handleRemove(defaultChannel, [_id as unknown as Stringable], options as RedisOptions, publishOptions);
+    if (_id) { // it's entirely possible for deleteOne to not find a document to delete
+      await handleRemove(defaultChannel, [_id as unknown as Stringable], options as RedisOptions, publishOptions);
+    }
   }, { tags: ["redis"], includeId: true });
 
   collection.on("after.deleteMany", async ({
@@ -147,6 +149,9 @@ export function applyRedis<TSchema extends Document & { _id: Stringable }>(
     args: [, mutator, options],
     _id,
   }) => {
+    if (!_id) { // it's entirely possible for updateOne to not find a document to delete
+      return;
+    }
     const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
     // TODO: what about partial deletion?
     await handleUpdate(defaultChannel, [_id as unknown as Stringable], fields, options as RedisOptions || {}, publishOptions);
