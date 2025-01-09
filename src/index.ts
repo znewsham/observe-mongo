@@ -5,7 +5,12 @@ export * as DiffSequence from "./diff.js";
 export { OrderedDict } from "./orderedDict.js";
 export { AsynchronousQueue } from "./queue.js";
 export { CachingChangeObserverImpl } from "./cachingChangeObserver.js";
-export { NestedProjectionOfTSchema, CursorDescription, WithCursorDescription } from "mongo-collection-helpers";
+export {
+  NestedProjectionOfTSchema,
+  ProjectionOfTSchema,
+  CursorDescription,
+  WithCursorDescription
+} from "mongo-collection-helpers";
 
 export type {
   RecursiveReadOnly,

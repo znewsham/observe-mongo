@@ -1,7 +1,7 @@
 {
   "name": "observe-mongo",
   "type": "module",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A set of functions to allow you to observe arbitrary mongo cursors with minimal modifications",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -65,6 +65,6 @@
     "typescript": "^5.5.2"
   },
   "dependencies": {
-    "mongo-collection-helpers": "^1.0.9"
+    "mongo-collection-helpers": "^1.0.13"
   }
 }
