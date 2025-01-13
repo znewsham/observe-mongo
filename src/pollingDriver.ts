@@ -117,6 +117,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
         }
       );
     }
+    await this.#multiplexer.flush();
   }
 
   stop(): void {
