@@ -5,6 +5,7 @@ export * as DiffSequence from "./diff.js";
 export { OrderedDict } from "./orderedDict.js";
 export { AsynchronousQueue } from "./queue.js";
 export { CachingChangeObserverImpl } from "./cachingChangeObserver.js";
+export { StringableIdMap } from "./stringableIdMap.js";
 export {
   NestedProjectionOfTSchema,
   ProjectionOfTSchema,
@@ -17,6 +18,7 @@ export type {
   ObserveChangesCallbacks,
   ObserveChangesMutatingCallbacks,
   ObserveChangesNonMutatingCallbacks,
+  FindCursorWithOptionalMap,
   ObserveCallbacks,
   ObserveMutatingCallbacks,
   ObserveNonMutatingCallbacks,

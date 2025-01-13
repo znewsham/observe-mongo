@@ -26,7 +26,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
     else {
       this.#cursor = cursor;
     }
-    if (options.retainCursorMap !== false && cursor._mapTransform) {
+    if (options.cloneCursor !== false && options.retainCursorMap !== false && cursor._mapTransform) {
       this.#cursor.map(cursor._mapTransform);
     }
     if (options.pollingInterval) {
@@ -55,13 +55,16 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
   }
 
   #startPolling() {
+    if (this.#pollingIntervalTime < 0) {
+      return;
+    }
     this.#pollingInterval = setInterval(async () => {
       if (this.#running) {
         return;
       }
       this.#running = true;
       try {
-        await this.#poll();
+        await this._poll();
       }
       finally {
         this.#running = false;
@@ -78,7 +81,9 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
   // but they probably do, either that or this poll function would need to use the same queue as the multiplexer
   // this is a viable option, but it would couple them more tightly than I want, the benefit would be a reduction in memory
   // not a huge reduction since we don't clone between the driver and the multiplexer
-  async #poll() {
+
+  // this member is public so that certain types (e.g., local) can inherit from it and use it
+  async _poll() {
     // TODO: pause polling
     if (!this.#multiplexer) {
       throw new Error("Can't be missing a multiplexer");
@@ -115,6 +120,8 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
   }
 
   stop(): void {
-    clearInterval(this.#pollingInterval);
+    if (this.#pollingInterval) {
+      clearInterval(this.#pollingInterval);
+    }
   }
 }

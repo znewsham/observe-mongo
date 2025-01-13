@@ -14,7 +14,8 @@ import {
 import { getChannels } from "./getChannels.js";
 
 import type { BulkWriteError, HookedCollection } from "mongo-collection-hooks";
-import { Stringable } from "../types.js";
+import type { Stringable } from "../types.js";
+import type { InferIdType, ModifyResult, UpdateResult, WithId } from "mongodb";
 
 
 export const uid = `${Math.random()}`.slice(2);
@@ -92,6 +93,18 @@ export async function handleInserts(
   }
 }
 
+function idFromMaybeResult<T extends Document>(result: null | undefined | WithId<T> | UpdateResult<T> | ModifyResult<T>): InferIdType<T> | undefined {
+  if (!result) {
+    return undefined;
+  }
+  if ("_id" in result) {
+    return result._id as InferIdType<T>;
+  }
+  if ("ok" in result && ! ("_id" in result)) {
+    return result.value?._id;
+  }
+}
+
 
 export function applyRedis<TSchema extends Document & { _id: Stringable }>(
   collection: HookedCollection<TSchema>,
@@ -128,7 +141,7 @@ export function applyRedis<TSchema extends Document & { _id: Stringable }>(
     await handleInserts(defaultChannel, insertedIds as unknown as Stringable[], options as RedisOptions, publishOptions);
   }, { tags: ["redis"] });
 
-  collection.on("after.deleteOne", async ({
+  collection.on("after.deleteOne.success", async ({
     args: [, options],
     _id
   }) => {
@@ -145,7 +158,7 @@ export function applyRedis<TSchema extends Document & { _id: Stringable }>(
     await handleRemove(defaultChannel, _ids as unknown as Stringable[], options as RedisOptions, publishOptions);
   }, { tags: ["redis"], includeIds: true });
 
-  collection.on("after.updateOne", async ({
+  collection.on("after.updateOne.success", async ({
     args: [, mutator, options],
     _id,
   }) => {
@@ -153,7 +166,6 @@ export function applyRedis<TSchema extends Document & { _id: Stringable }>(
       return;
     }
     const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
-    // TODO: what about partial deletion?
     await handleUpdate(defaultChannel, [_id as unknown as Stringable], fields, options as RedisOptions || {}, publishOptions);
   }, { tags: ["redis"], includeId: true });
 
@@ -165,4 +177,69 @@ export function applyRedis<TSchema extends Document & { _id: Stringable }>(
     // TODO: what about partial deletion?
     await handleUpdate(defaultChannel, _ids as unknown as Stringable[], fields, options as RedisOptions || {}, publishOptions);
   }, { tags: ["redis"], includeIds: true });
+
+  collection.on("after.findOneAndDelete.success", async ({
+    result,
+    args: [, options],
+  }) => {
+    if (!result) { // it's entirely possible for updateOne to not find a document to delete
+      return;
+    }
+    const _id = idFromMaybeResult(result);
+    if (!_id) {
+      return;
+    }
+
+    await handleRemove(defaultChannel, [_id], options as RedisOptions, publishOptions);
+  });
+
+  collection.on("after.findOneAndUpdate.success", async ({
+    result,
+    args: [, mutator, options],
+  }) => {
+    if (!result) { // it's entirely possible for updateOne to not find a document to delete
+      return;
+    }
+    const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
+
+    const _id = idFromMaybeResult(result);
+    if (!_id) {
+      return;
+    }
+    await handleUpdate(defaultChannel, [_id], fields, options as RedisOptions || {}, publishOptions);
+  });
+
+  collection.on("after.findOneAndReplace.success", async ({
+    result,
+    args: [, , options],
+  }) => {
+    if (!result) { // it's entirely possible for updateOne to not find a document to delete
+      return;
+    }
+
+    const _id = idFromMaybeResult(result);
+    if (!_id) {
+      return;
+    }
+    // debatable - we're going to consider a replacement to be a remove + insert, otherwise it's hard to know which fields changed
+    await handleRemove(defaultChannel, [_id], options as RedisOptions, publishOptions);
+    await handleInserts(defaultChannel, [_id], options as RedisOptions, publishOptions);
+  });
+
+  collection.on("after.replaceOne.success", async ({
+    result,
+    args: [, , options],
+  }) => {
+    if (!result) { // it's entirely possible for updateOne to not find a document to delete
+      return;
+    }
+
+    const _id = idFromMaybeResult(result as WithId<TSchema> | UpdateResult<TSchema>);
+    if (!_id) {
+      return;
+    }
+    // debatable - we're going to consider a replacement to be a remove + insert, otherwise it's hard to know which fields changed
+    await handleRemove(defaultChannel, [_id], options as RedisOptions, publishOptions);
+    await handleInserts(defaultChannel, [_id], options as RedisOptions, publishOptions);
+  });
 }
