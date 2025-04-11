@@ -2,9 +2,10 @@
   "include": ["src/*", "src/redis/*"],
   "exclude": ["src/__*"],
   "compilerOptions": {
+    "rootDir": "src",
     "outDir": "es2015",
     "module": "ES2015",
-    "moduleResolution": "Node",
+    "moduleResolution": "bundler",
     "target": "ES2015",
     "declaration": true,
     "useDefineForClassFields": true,
@@ -17,6 +18,12 @@
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "maxNodeModuleJsDepth": 2,
-    "importHelpers": true
+    "resolvePackageJsonImports": true,
+    "importHelpers": true,
+    "paths": {
+      "#asyncQueue": [
+        "./src/clientQueue.js"
+      ]
+    }
   }
 }
