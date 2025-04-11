@@ -15,7 +15,7 @@ import { getChannels } from "./getChannels.js";
 
 import type { BulkWriteError, HookedCollection } from "mongo-collection-hooks";
 import type { Stringable } from "../types.js";
-import type { InferIdType, ModifyResult, UpdateResult, WithId } from "mongodb";
+import type { Document, InferIdType, ModifyResult, UpdateResult, WithId } from "mongodb";
 
 
 export const uid = `${Math.random()}`.slice(2);
@@ -93,7 +93,7 @@ export async function handleInserts(
   }
 }
 
-function idFromMaybeResult<T extends Document>(result: null | undefined | WithId<T> | UpdateResult<T> | ModifyResult<T>): InferIdType<T> | undefined {
+export function idFromMaybeResult<T extends Document>(result: null | undefined | WithId<T> | UpdateResult<T> | ModifyResult<T>): InferIdType<T> | undefined {
   if (!result) {
     return undefined;
   }
@@ -106,8 +106,8 @@ function idFromMaybeResult<T extends Document>(result: null | undefined | WithId
 }
 
 
-export function applyRedis<TSchema extends Document & { _id: Stringable }>(
-  collection: HookedCollection<TSchema>,
+export function applyRedis<TSchema extends Document & { _id?: Stringable }>(
+  collection: Pick<HookedCollection<TSchema>, "on" | "collectionName">,
   publishOptions: PublishOptions
 ) {
   const defaultChannel = collection.collectionName;

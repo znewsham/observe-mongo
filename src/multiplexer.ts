@@ -1,6 +1,6 @@
 import { CachingChangeObserverImpl } from "./cachingChangeObserver.js";
 import { OrderedDict } from "./orderedDict.js";
-import { AsynchronousQueue } from "./queue.js";
+import { AsynchronousQueue } from "#asyncQueue";
 import { StringableIdMap } from "./stringableIdMap.js";
 import { CachingChangeObserver, ObserveChangesCallbackKeys, ObserveChangesCallbackNames, ObserveChangesObserver, ObserveMultiplexerInterface, StringObjectWithoutID, Stringable } from "./types.js";
 

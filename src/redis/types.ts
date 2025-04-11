@@ -1,11 +1,11 @@
-import type { Collection, ObjectId, Document, FindCursor, Filter } from "mongodb";
+import type { Collection, Document } from "mongodb";
 
 import {
   Events,
   RedisPipe,
 } from "./constants.js";
 import { FindCursorWithOptionalMap, Stringable } from "../types.js";
-import { NestedProjectionOfTSchema, WithCursorDescription } from "mongo-collection-helpers";
+import { WithCursorDescription } from "mongo-collection-helpers";
 
 export type FindCursorWithDescription<T> = Omit<FindCursorWithOptionalMap<T>, "clone"> & WithCursorDescription<T> & {
   clone(): FindCursorWithDescription<T>

@@ -3,7 +3,7 @@ import {
   OrderedDict,
 } from "../orderedDict.js";
 
-import { AsynchronousQueue } from "../queue.js";
+import { AsynchronousQueue } from "../serverQueue.js";
 import {
   ObserveDriver,
   ObserveMultiplexerInterface,

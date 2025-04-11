@@ -1,4 +1,4 @@
-import { AsyncResource } from "async_hooks";
+import { AsyncResource } from "#async_hooks";
 import { ObserveMultiplexer } from "./multiplexer.js";
 import { Clone, ObserveChangesCallbacks, ObserveChangesObserver, ObserveHandle, StringObjectWithoutID, Stringable, naiveClone } from "./types.js";
 
