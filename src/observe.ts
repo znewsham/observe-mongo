@@ -104,7 +104,6 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
   const ordered = observeCallbacksAreOrdered(observeCallbacks);
   const cache = new CachingChangeObserverImpl({
     ordered,
-    cloneDocuments: false, // We handle cloning separately in the callback implementation
     clone: _clone
   });
 
@@ -154,8 +153,8 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
           throw new Error(`Unknown id for changed: ${id}`);
         }
 
-        const cloned = cloneIfMutating(doc);
-        const oldDoc = transform(cloned);
+        const oldDoc = transform(_clone(doc));
+        cache.changed(id, fields);
 
         applyChanges(doc, fields);
 
@@ -229,18 +228,19 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
       },
       changed(id, fields) {
         if (observeCallbacks.changed) {
-          const oldDoc = cache.get(id);
+          const doc = cache.get(id);
+          // it's important that this comes first, since we don't clone the documents
+          const oldDocCloned = _clone(transform(doc));
           cache.changed(id, fields);
-          if (!oldDoc) {
+          if (!doc) {
             throw new Error(`Unknown id for changed: ${id}`);
           }
-          const doc = cloneIfMutating(oldDoc);
 
           applyChanges(doc, fields);
 
           observeCallbacks.changed(
-            transform(doc),
-            transform(cloneIfMutating(oldDoc))
+            transform(cloneIfMutating(doc)),
+            oldDocCloned
           );
         }
       },

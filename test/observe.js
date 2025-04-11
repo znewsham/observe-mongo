@@ -92,6 +92,9 @@ describe("document cloning", () => {
     // Verify the values were passed correctly
     assert.strictEqual(newDoc.value, "updated", "newDoc has updated value");
 
+    // Verify the old value is retained
+    assert.strictEqual(oldDoc.value, "initial", "oldDoc has initial value");
+
     // Test that the objects are distinct (cloned)
     assert.notStrictEqual(newDoc, oldDoc, "newDoc and oldDoc should be different objects");
     assert.notStrictEqual(newDoc, originalDoc, "newDoc should not be the original object");
