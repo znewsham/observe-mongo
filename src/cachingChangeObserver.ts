@@ -20,8 +20,8 @@ export class CachingChangeObserverImpl<
     ordered,
     cloneDocuments = false,
     clone
-  }: { 
-    ordered: boolean, 
+  }: {
+    ordered: boolean,
     cloneDocuments?: boolean,
     clone?: Clone
   }) {
