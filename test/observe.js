@@ -5,6 +5,51 @@ import assert from "node:assert";
 import { setTimeout } from "node:timers/promises";
 import { observe } from "../lib/observe.js";
 
+describe("document cloning", () => {
+  it("should clone documents when cloneDocuments is enabled", async () => {
+    // Create collection with an initial document
+    const data = [{ _id: "testId", field: { nested: "value" } }];
+    const collection = new FakeCollection(data);
+    const cursor = collection.find({});
+    
+    // Get reference to the original document
+    const originalDoc = data[0];
+    
+    // Setup observe with cloneDocuments enabled
+    const addedMock = mock.fn();
+    const handle = await observe(
+      cursor,
+      collection,
+      { added: addedMock },
+      { cloneDocuments: true, pollingInterval: 5 }
+    );
+    
+    // Wait for initial callbacks
+    await setTimeout(10);
+    
+    // Verify the 'added' callback was called with our document
+    assert.strictEqual(addedMock.mock.callCount(), 1, "added callback should be called once");
+    
+    // Modify the original document
+    originalDoc.field.nested = "modified";
+    
+    // Add another document to trigger polling
+    await collection.insertOne({ _id: "testId2", field: "value" });
+    
+    // Wait for polling to happen
+    await setTimeout(10);
+    
+    // Stop the observer
+    handle.stop();
+    
+    // Get the document as it was passed to the callback
+    const addedDoc = addedMock.mock.calls[0].arguments[0];
+    
+    // Check that the cloned document has the original value, not the modified one
+    assert.strictEqual(addedDoc.field.nested, "value", "Document should be a clone with original values");
+  });
+});
+
 describe("unordered observe", () => {
   it("should correctly associate with the invoking async context", async () => {
     const asyncStorage = new AsyncLocalStorage();
