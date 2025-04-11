@@ -1,7 +1,7 @@
 import { applyChanges } from "./diff.js";
 import { OrderedDict } from "./orderedDict.js";
 import { StringableIdMap } from "./stringableIdMap.js";
-import { CachingChangeObserver, OrderedObserveChangesCallbacks, SharedObserveChangesCallbacks, StringObjectWithoutID, Stringable } from "./types.js";
+import { CachingChangeObserver, Clone, OrderedObserveChangesCallbacks, SharedObserveChangesCallbacks, StringObjectWithoutID, Stringable, naiveClone } from "./types.js";
 
 function assertIsOrderedDict<ID extends Stringable, T extends StringObjectWithoutID>(dict: OrderedDict<ID, T> | StringableIdMap<ID, T>): asserts dict is OrderedDict<ID, T> {
 
@@ -13,12 +13,22 @@ export class CachingChangeObserverImpl<
 > implements CachingChangeObserver<ID, T> {
   #docs: OrderedDict<ID, T> | StringableIdMap<ID, T>;
   #ordered: boolean;
+  #cloneDocuments: boolean;
+  #clone: Clone;
 
   constructor({
-    ordered
-  }: { ordered: boolean}) {
+    ordered,
+    cloneDocuments = false,
+    clone
+  }: {
+    ordered: boolean,
+    cloneDocuments?: boolean,
+    clone?: Clone
+  }) {
     this.#ordered = ordered;
     this.#docs = ordered ? new OrderedDict<ID, T>() : new StringableIdMap<ID, T>();
+    this.#cloneDocuments = cloneDocuments;
+    this.#clone = clone || naiveClone;
   }
 
   forEach(iterator: (doc: T, id: ID) => void): void {
@@ -31,7 +41,8 @@ export class CachingChangeObserverImpl<
     if (this.#docs.has(id)) {
       throw new Error("This document already exists");
     }
-    this.#docs.set(id, doc);
+    const docToStore = this.#cloneDocuments && doc ? this.#clone(doc) : doc;
+    this.#docs.set(id, docToStore);
   }
 
   addedBefore(id: ID, doc: T, before?: ID): void {
@@ -41,15 +52,16 @@ export class CachingChangeObserverImpl<
     if (before && !this.#docs.has(before)) {
       throw new Error("Adding a document before one that doesn't exist");
     }
+    const docToStore = this.#cloneDocuments && doc ? this.#clone(doc) : doc;
     if (!this.#ordered) {
       // this is an odd situation - but in some cases (e.g., with a limit + sort)
       // the driver may choose to use these callbacks even though they don't care about the order
       // it's weird, but do we really care?
-      this.#docs.set(id, doc);
+      this.#docs.set(id, docToStore);
       return;
     }
     assertIsOrderedDict(this.#docs);
-    this.#docs.add(id, doc, before);
+    this.#docs.add(id, docToStore, before);
   }
 
   changed(id: ID, fields: Partial<T>): void {

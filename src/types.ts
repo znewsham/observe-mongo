@@ -107,7 +107,7 @@ export type ObserveOptions<T extends { _id: Stringable }> = {
   ordered?: boolean,
 
   /**
-   * Set to true if the callbacks (or anything downstream) wont mutate the documents (avoids a clone). You should aim to always set this to true
+   * Set to true if the callbacks (or anything downstream) wont mutate the documents (avoids a clone). You should aim to always set this to true. This option applies to the observer and it's cache, not the multiplexer. For that use `cloneDocuments`
    * @default: false
    */
   nonMutatingCallbacks?: boolean,
@@ -122,6 +122,13 @@ export type ObserveOptions<T extends { _id: Stringable }> = {
    * @default: doc => JSON.parse(JSON.stringify(doc))
    */
   clone?: Clone,
+
+  /**
+   * Enable document cloning in the internal caching layer to prevent document mutation.
+   * When true, documents will be cloned before being stored in the cache.
+   * @default: false
+   */
+  cloneDocuments?: boolean,
 
   /**
    * An "equals" implementation - like EJSON.equals
@@ -263,6 +270,12 @@ export type ObserveChangesObserver<ID extends Stringable, T> = Required<
 > & {
   observes(hookName: keyof ObserveChangesCallbacks<ID, T>): boolean
   // flush(downstream?: boolean): Promise<void>
+}
+
+export type CachingChangeObserverOptions = {
+  ordered: boolean;
+  cloneDocuments?: boolean;
+  clone?: Clone;
 }
 
 export type CachingChangeObserver<ID extends Stringable, T extends StringObjectWithoutID> = ObserveChangesObserver<ID, T> & {

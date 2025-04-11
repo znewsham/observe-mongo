@@ -65,7 +65,9 @@ export async function observeChanges<T extends { _id: Stringable }>(
         if (driver) {
           driver.stop();
         }
-      }
+      },
+      cloneDocuments: options.cloneDocuments,
+      clone: options.clone
     });
   }
 
@@ -101,7 +103,9 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
   let suppressed = suppressInitial;
   const ordered = observeCallbacksAreOrdered(observeCallbacks);
   const cache = new CachingChangeObserverImpl({
-    ordered
+    ordered,
+    cloneDocuments: false, // We handle cloning separately in the callback implementation
+    clone: _clone
   });
 
   const cloneIfMutating = nonMutatingCallbacks ? <X>(doc: X) => doc : _clone;

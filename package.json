@@ -1,7 +1,7 @@
 {
   "name": "observe-mongo",
   "type": "module",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "A set of functions to allow you to observe arbitrary mongo cursors with minimal modifications",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -9,7 +9,7 @@
     "build": "npx tsc",
     "build-es2020": "npx tsc -p tsconfig-es2020.json",
     "build-es2015": "npx tsc -p tsconfig-es2015.json",
-    "test": "node --test ./test/index.js",
+    "test": "npm run build && node --test ./test/index.js",
     "test:watch": "node --test --watch --enable-source-maps ./test/index.js",
     "test:watch-only": "node --test --watch --test-only --enable-source-maps ./test/index.js",
     "test:watch-inspect-only": "node --test --watch --test-only --inspect-brk --enable-source-maps ./test/index.js",

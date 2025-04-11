@@ -4,7 +4,8 @@ import { CachingChangeObserverImpl } from "../lib/cachingChangeObserver.js";
 
 function getCachingChangeObserver(ordered, items = [{ _id: "test1" }, { _id: "test2" }]) {
   const cachingChangeObserver = new CachingChangeObserverImpl({
-    ordered
+    ordered,
+    cloneDocuments: false
   });
 
   items.forEach((item) => {
@@ -121,5 +122,60 @@ describe("cachingChangeObserver", () => {
         assert.strictEqual(cachingChangeObserver.indexOf("test3"), -1);
       });
     }
+  });
+
+  it("cloneDocuments should clone documents before storing", () => {
+    const original = { field: { nested: "value" } };
+    const id = "test1";
+    
+    // Create a custom cloning function that we can verify was called
+    let cloneCalled = false;
+    const deepCloneFunction = (doc) => {
+      cloneCalled = true;
+      return JSON.parse(JSON.stringify(doc));
+    };
+    
+    // Create cache with cloning enabled and custom clone function
+    const cachingObserver = new CachingChangeObserverImpl({
+      ordered: false,
+      cloneDocuments: true,
+      clone: deepCloneFunction
+    });
+    
+    // Add document
+    cachingObserver.added(id, original);
+    
+    // Verify clone was called
+    assert.strictEqual(cloneCalled, true);
+    
+    // Modify the original object
+    original.field.nested = "modified";
+    
+    // The stored document should not be affected by the modification
+    const stored = cachingObserver.get(id);
+    assert.strictEqual(stored.field.nested, "value");
+  });
+  
+  it("should use custom clone function when provided", () => {
+    const original = { field: { nested: "value" } };
+    const id = "test1";
+    
+    // Create a custom marker to verify our clone function was used
+    const marker = { custom: true };
+    const customClone = () => marker;
+    
+    // Create cache with cloneDocuments enabled and custom clone function
+    const cachingObserver = new CachingChangeObserverImpl({
+      ordered: false,
+      cloneDocuments: true,
+      clone: customClone
+    });
+    
+    // Add document
+    cachingObserver.added(id, original);
+    
+    // The stored document should be what our clone function returned
+    const stored = cachingObserver.get(id);
+    assert.strictEqual(stored, marker);
   });
 });

@@ -6,7 +6,9 @@ import { CachingChangeObserver, ObserveChangesCallbackKeys, ObserveChangesCallba
 
 type ObserveMultiplexerOptions = {
   ordered: boolean,
-  onStop?: Function
+  onStop?: Function,
+  cloneDocuments?: boolean,
+  clone?: (doc: any) => any
 }
 
 export class ObserveMultiplexer<
@@ -30,9 +32,15 @@ export class ObserveMultiplexer<
   constructor({
     ordered,
     onStop,
+    cloneDocuments = false,
+    clone
   }: ObserveMultiplexerOptions) {
     this._ordered = ordered;
-    this.#cache = new CachingChangeObserverImpl<ID, T>({ ordered });
+    this.#cache = new CachingChangeObserverImpl<ID, T>({ 
+      ordered, 
+      cloneDocuments,
+      clone
+    });
     this.#ready = new Promise((resolve, reject) => {
       this.#resolve = resolve;
     });
