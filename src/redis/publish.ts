@@ -13,7 +13,7 @@ import {
 
 import { getChannels } from "./getChannels.js";
 
-import type { BulkWriteError, HookedCollection } from "mongo-collection-hooks";
+import type { BulkWriteError, HookedCollection, ExternalBeforeAfterEvent, CommonDefinition } from "mongo-collection-hooks";
 import type { Stringable } from "../types.js";
 import type { Document, InferIdType, ModifyResult, UpdateResult, WithId } from "mongodb";
 
@@ -79,8 +79,10 @@ export async function handleInserts(
   publishOptions: PublishOptions
 ) {
   if (options?.pushToRedis !== false) {
-    const channels = getChannels(defaultChannel, options);
     await Promise.all(insertedIds.map(async (id) => {
+      // it's pretty unusual, but not impossible for us to have an observer on a single ID which hasn't been inserted yet
+      // optimistic UX (and potentially any reactivity) will break in that case, if we don't get the ID scoped channel
+      const channels = getChannels(defaultChannel, options, [id]);
       await Promise.all(channels.map(async (channel) => {
         const event: RedisInsert<{ _id: Stringable }> = {
           [RedisPipe.EVENT]: Events.INSERT,
@@ -106,8 +108,11 @@ export function idFromMaybeResult<T extends Document>(result: null | undefined |
 }
 
 
-export function applyRedis<TSchema extends Document & { _id?: Stringable }>(
-  collection: Pick<HookedCollection<TSchema>, "on" | "collectionName">,
+export function applyRedis<
+  TSchema extends Document & { _id?: Stringable },
+  ExtraEvents extends Record<string, ExternalBeforeAfterEvent<CommonDefinition & { result: any }>> = {},
+>(
+  collection: Pick<HookedCollection<TSchema, ExtraEvents>, "on" | "collectionName">,
   publishOptions: PublishOptions
 ) {
   const defaultChannel = collection.collectionName;

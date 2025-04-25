@@ -1,7 +1,7 @@
 {
   "name": "observe-mongo",
   "type": "module",
-  "version": "0.1.13",
+  "version": "0.2.0-rc.1",
   "description": "A set of functions to allow you to observe arbitrary mongo cursors with minimal modifications",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
@@ -73,7 +73,7 @@
     "@blastjs/minimongo": "^0.1.0",
     "@types/node": "^20.14.9",
     "esbuild": "^0.24.2",
-    "mongo-collection-hooks": "^0.2.3",
+    "mongo-collection-hooks": "^0.2.13-rc.3",
     "mongodb": "^5.9.2",
     "puppeteer": "^24.1.0",
     "typescript": "^5.5.2"
