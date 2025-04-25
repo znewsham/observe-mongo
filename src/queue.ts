@@ -4,4 +4,5 @@ export interface AsynchronousQueue {
   _run(): void;
   _scheduleRun(): void;
   flush(): Promise<void>;
+  destroy(): void;
 }

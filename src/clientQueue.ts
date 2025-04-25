@@ -99,4 +99,8 @@ export class AsynchronousQueue implements AsynchronousQueueInterface {
   async flush(): Promise<void> {
     await this.runTask(() => {});
   }
+
+  destroy(): void {
+    this.#queue = [];
+  }
 }

@@ -637,5 +637,6 @@ export class RedisObserverDriver<
 
   stop(): void {
     this.#manager.detach<T, SortT, FilterT>(this);
+    this.#queue.destroy();
   }
 }

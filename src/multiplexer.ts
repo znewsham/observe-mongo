@@ -32,12 +32,15 @@ export class ObserveMultiplexer<
   constructor({
     ordered,
     onStop,
-    cloneDocuments = false,
+    // in general, cloneDocuments must always be true
+    // this is not because of add (where cloneDocuments is used) but because of changed, which mutates the fields of the document itself
+    // I don't think there's any situation where we'd want this to be false...
+    cloneDocuments = true,
     clone
   }: ObserveMultiplexerOptions) {
     this._ordered = ordered;
-    this.#cache = new CachingChangeObserverImpl<ID, T>({ 
-      ordered, 
+    this.#cache = new CachingChangeObserverImpl<ID, T>({
+      ordered,
       cloneDocuments,
       clone
     });
@@ -112,6 +115,7 @@ export class ObserveMultiplexer<
       throw new Error("How'd we stop when we aren't ready?");
     }
     this.#stopped = true;
+    this.#queue.destroy();
     this.#onStop?.();
   }
 
