@@ -84,7 +84,6 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
 
   // this member is public so that certain types (e.g., local) can inherit from it and use it
   async _poll() {
-    // TODO: pause polling
     if (!this.#multiplexer) {
       throw new Error("Can't be missing a multiplexer");
     }

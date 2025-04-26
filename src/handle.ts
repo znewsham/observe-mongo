@@ -67,41 +67,41 @@ export class ObserveHandleImpl<
     return !!this.#callbacks[hookName];
   }
 
-  added(_id: ID, doc: T) {
-    this.#maybeAsyncResource.runInAsyncScope(() => {
+  async added(_id: ID, doc: T) {
+    await this.#maybeAsyncResource.runInAsyncScope(() => {
       if (this.#callbacks.added) {
-        this.#callbacks.added(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc));
+        return this.#callbacks.added(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc));
       }
     });
   }
-  addedBefore(_id: ID, doc: T, before?: ID) {
-    this.#maybeAsyncResource.runInAsyncScope(() => {
+  async addedBefore(_id: ID, doc: T, before?: ID) {
+    await this.#maybeAsyncResource.runInAsyncScope(() => {
       if (this.#callbacks.addedBefore) {
-        this.#callbacks.addedBefore(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc), before);
+        return this.#callbacks.addedBefore(_id, this.nonMutatingCallbacks ? doc : this.#clone(doc), before);
       }
     });
   }
 
-  movedBefore(_id: ID, before: ID | undefined) {
-    this.#maybeAsyncResource.runInAsyncScope(() => {
+  async movedBefore(_id: ID, before: ID | undefined) {
+    await this.#maybeAsyncResource.runInAsyncScope(() => {
       if (this.#callbacks.movedBefore) {
-        this.#callbacks.movedBefore(_id, before);
+        return this.#callbacks.movedBefore(_id, before);
       }
     });
   }
 
-  changed(_id: ID, fields: Partial<T>) {
-    this.#maybeAsyncResource.runInAsyncScope(() => {
+  async changed(_id: ID, fields: Partial<T>) {
+    await this.#maybeAsyncResource.runInAsyncScope(() => {
       if (this.#callbacks.changed) {
-        this.#callbacks.changed(_id, this.nonMutatingCallbacks ? fields : this.#clone(fields));
+        return this.#callbacks.changed(_id, this.nonMutatingCallbacks ? fields : this.#clone(fields));
       }
     });
   }
 
-  removed(_id: ID) {
-    this.#maybeAsyncResource.runInAsyncScope(() => {
+  async removed(_id: ID) {
+    await this.#maybeAsyncResource.runInAsyncScope(() => {
       if (this.#callbacks.removed) {
-        this.#callbacks.removed(_id);
+        return this.#callbacks.removed(_id);
       }
     });
   }

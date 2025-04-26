@@ -69,6 +69,9 @@ export async function observeChanges<T extends { _id: Stringable }>(
       cloneDocuments: options.cloneDocuments,
       clone: options.clone
     });
+
+    // @ts-expect-error we're setting a private property to make testing a bit easier
+    multiplexer._driver = driver;
   }
 
   observerMultiplexers.set(id, multiplexer as unknown as ObserveMultiplexer<T["_id"]>);
@@ -129,7 +132,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         const beforeDoc = before && transform(cloneIfMutating(cache.get(before)));
 
         if (observeCallbacks.addedAt) {
-          observeCallbacks.addedAt(
+          return observeCallbacks.addedAt(
             doc,
             indices
               ? before
@@ -140,7 +143,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
           );
         }
         else if (observeCallbacks.added) {
-          observeCallbacks.added(doc);
+          return observeCallbacks.added(doc);
         }
       },
       changed(id, fields) {
@@ -159,14 +162,14 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         applyChanges(doc, fields);
 
         if (observeCallbacks.changedAt) {
-          observeCallbacks.changedAt(
+          return observeCallbacks.changedAt(
             transform(doc),
             oldDoc,
             indices ? cache.indexOf(id) : -1
           );
         }
         else if (observeCallbacks.changed) {
-          observeCallbacks.changed(transform(doc), oldDoc);
+          return observeCallbacks.changed(transform(doc), oldDoc);
         }
       },
       movedBefore(id, before) {
@@ -189,7 +192,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
           --to;
         }
 
-        observeCallbacks.movedTo(
+        return observeCallbacks.movedTo(
           transform(cloneIfMutating(cache.get(id))),
           from,
           to,
@@ -208,10 +211,10 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         cache.removed(id);
 
         if (observeCallbacks.removedAt) {
-          observeCallbacks.removedAt(doc, index);
+          return observeCallbacks.removedAt(doc, index);
         }
         else if (observeCallbacks.removed) {
-          observeCallbacks.removed(doc);
+          return observeCallbacks.removed(doc);
         }
       },
     };
@@ -223,7 +226,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         }
         cache.added(id, { _id: id, ...fields });
         if (observeCallbacks.added) {
-          observeCallbacks.added(transform({ ...fields, _id: id }));
+          return observeCallbacks.added(transform({ ...fields, _id: id }));
         }
       },
       changed(id, fields) {
@@ -238,7 +241,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
 
           applyChanges(doc, fields);
 
-          observeCallbacks.changed(
+          return observeCallbacks.changed(
             transform(cloneIfMutating(doc)),
             oldDocCloned
           );
@@ -248,7 +251,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         if (observeCallbacks.removed) {
           const doc = cache.get(id);
           cache.removed(id);
-          observeCallbacks.removed(transform(doc));
+          return observeCallbacks.removed(transform(doc));
         }
       },
     };
