@@ -34,10 +34,10 @@ export class AsynchronousQueue implements AsynchronousQueueInterface {
   constructor(_bindTasksToQueueAsyncResource = false, errorHandler: (error: any) => void = console.warn) {
     this.#errorHandler = errorHandler;
   }
-  async runTask<F extends any>(task: () => F | Promise<F>): Promise<F> {
+  async runTask<F extends any>(task: () => F | Promise<F>, name?: string): Promise<F> {
     return new Promise((resolve, reject) => {
       const taskHandle = new TaskHandle({
-        name: task.name,
+        name: name || task.name,
         task,
         resolve,
         reject
@@ -47,9 +47,9 @@ export class AsynchronousQueue implements AsynchronousQueueInterface {
     });
   }
 
-  queueTask(task: Function) {
+  queueTask(task: Function, name?: string) {
     this.#queue.push(new TaskHandle({
-      name: task.name,
+      name: name || task.name,
       task
     }));
     this._scheduleRun();
@@ -97,7 +97,7 @@ export class AsynchronousQueue implements AsynchronousQueueInterface {
   }
 
   async flush(): Promise<void> {
-    await this.runTask(() => {});
+    await this.runTask(() => {}, "internalFlush");
   }
 
   destroy(): void {
