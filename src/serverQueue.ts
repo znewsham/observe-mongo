@@ -14,6 +14,7 @@ class TaskHandle extends AsyncResource {
   reject: ((error: any) => void) | undefined;
   name: string | undefined;;
   task: Function | undefined;
+  #destroyed: boolean = false;
   constructor({
     resolve,
     reject,
@@ -23,8 +24,22 @@ class TaskHandle extends AsyncResource {
     super("TaskHandle");
     this.name = name;
     this.task = task;
-    this.resolve = resolve;
-    this.reject = reject;
+    this.resolve = (arg) => {
+      this.destroy();
+      resolve?.(arg);
+    }
+    this.reject = (err) => {
+      this.destroy();
+      reject?.(err);
+    }
+  }
+
+  destroy() {
+    if (this.#destroyed) {
+      return;
+    }
+    this.#destroyed = true;
+    this.emitDestroy();
   }
 }
 
@@ -111,5 +126,13 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
 
   async flush(): Promise<void> {
     await this.runTask(() => {});
+  }
+
+  destroy(): void {
+    this.#queue.forEach((task) => {
+      task.destroy();
+    });
+    this.#queue = [];
+    this.emitDestroy();
   }
 }
