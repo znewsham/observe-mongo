@@ -27,6 +27,9 @@ export class ObserveMultiplexer<
   #stopped: boolean = false;
   #hookNames = new Map<string, Set<ObserveChangesObserver<ID, T>>>();
 
+  // this is exposed purely for testing to avoid dealing with unexpected race conditions
+  private _driver: any;
+
   // @ts-expect-error
   #resolve: Function;
   constructor({
@@ -73,7 +76,7 @@ export class ObserveMultiplexer<
       });
 
       return this.#sendAdds(handle);
-    }), this.#ready]);
+    }, "initialAdds"), this.#ready]);
     this.#pendingAdds--;
   }
 
@@ -127,7 +130,7 @@ export class ObserveMultiplexer<
     this.#queue.queueTask(() => {
       this.#isReady = true;
       this.#resolve();
-    });
+    }, "ready");
   }
 
   onFlush(cb: () => {}) {
@@ -136,7 +139,7 @@ export class ObserveMultiplexer<
         throw new Error("only call onFlush on a multiplexer that will be ready");
       }
       cb();
-    })
+    }, "flush")
   }
 
   observes(hookName: ObserveChangesCallbackKeys): boolean {
@@ -151,15 +154,15 @@ export class ObserveMultiplexer<
   }
 
   has(id: ID): Promise<boolean> {
-    return this.#queue.runTask(() => this.#cache.getDocs().has(id));
+    return this.#queue.runTask(() => this.#cache.getDocs().has(id), "has");
   }
 
   getDocs(): Promise<OrderedDict<ID, T> | StringableIdMap<ID, T>> {
-    return this.#queue.runTask(() => this.#cache.getDocs());
+    return this.#queue.runTask(() => this.#cache.getDocs(), "getDocs");
   }
 
   get(id: ID): Promise<T | undefined> {
-    return this.#queue.runTask(() => this.#cache.get(id));
+    return this.#queue.runTask(() => this.#cache.get(id), "get");
   }
 
   async flush(downstream?: boolean): Promise<void> {
@@ -175,7 +178,7 @@ export class ObserveMultiplexer<
       }
       this.#cache.movedBefore(id, before);
       await Promise.all(Array.from(this.#handles.values()).map(handle => handle.observes("movedBefore") && handle.movedBefore(id, before)));
-    });
+    }, "movedBefore");
   }
 
   addedBefore(id: ID, doc: T, before?: ID) {
@@ -190,7 +193,7 @@ export class ObserveMultiplexer<
         // this is an oddly specific meteor constrait - I have no idea why
         handle.observes("added") && await handle.added(id, doc);
       }));
-    });
+    }, "addedBefore");
   }
 
   added(id: ID, doc: T) {
@@ -199,15 +202,15 @@ export class ObserveMultiplexer<
         return;
       }
       this.#cache.added(id, doc);
-      Array.from(this.#handles.values()).map(handle => {
+      await Promise.all(Array.from(this.#handles.values()).map(async handle => {
         if (handle.observes("added")) {
-          handle.added(id, doc);
+          await handle.added(id, doc);
         }
         else if (handle.observes("addedBefore")) {
-          handle.addedBefore(id, doc, undefined);
+          await handle.addedBefore(id, doc, undefined);
         }
-      });
-    });
+      }));
+    }, "added");
   }
 
   changed(id: ID, fields: Partial<T>) {
@@ -216,8 +219,8 @@ export class ObserveMultiplexer<
         return;
       }
       this.#cache.changed(id, fields);
-      Array.from(this.#handles.values()).map(handle => handle.observes("changed") && handle.changed(id, fields));
-    });
+      await Promise.all(Array.from(this.#handles.values()).map(async handle => handle.observes("changed") && await handle.changed(id, fields)));
+    }, "changed");
   }
 
   removed(id: ID) {
@@ -226,8 +229,8 @@ export class ObserveMultiplexer<
         return;
       }
       this.#cache.removed(id);
-      Array.from(this.#handles.values()).map(handle => handle.observes("removed") && handle.removed(id));
-    });
+      await Promise.all(Array.from(this.#handles.values()).map(async handle => handle.observes("removed") && await handle.removed(id)));
+    }, "removed");
   }
 
   // #endregion
