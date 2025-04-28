@@ -196,7 +196,7 @@ export function applyRedis<
     }
 
     await handleRemove(defaultChannel, [_id], options as RedisOptions, publishOptions);
-  });
+  }, { tags: ["redis"] });
 
   collection.on("after.findOneAndUpdate.success", async ({
     result,
@@ -212,7 +212,7 @@ export function applyRedis<
       return;
     }
     await handleUpdate(defaultChannel, [_id], fields, options as RedisOptions || {}, publishOptions);
-  });
+  }, { tags: ["redis"] });
 
   collection.on("after.findOneAndReplace.success", async ({
     result,
@@ -229,7 +229,7 @@ export function applyRedis<
     // debatable - we're going to consider a replacement to be a remove + insert, otherwise it's hard to know which fields changed
     await handleRemove(defaultChannel, [_id], options as RedisOptions, publishOptions);
     await handleInserts(defaultChannel, [_id], options as RedisOptions, publishOptions);
-  });
+  }, { tags: ["redis"] });
 
   collection.on("after.replaceOne.success", async ({
     result,
@@ -246,5 +246,5 @@ export function applyRedis<
     // debatable - we're going to consider a replacement to be a remove + insert, otherwise it's hard to know which fields changed
     await handleRemove(defaultChannel, [_id], options as RedisOptions, publishOptions);
     await handleInserts(defaultChannel, [_id], options as RedisOptions, publishOptions);
-  });
+  }, { tags: ["redis"] });
 }
