@@ -26,9 +26,9 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, 
     return StringableIdMap;
   }
 
-  // @ts-ignore vscode reports an error on this, but tsc does not
-  keys(): IterableIterator<ID | string> {
+  keys(): MapIterator<ID | string> {
     const iterator = super.keys();
+    // @ts-ignore - vscode doesn't mind this, but tsc does
     return {
       next() {
         const next = iterator.next();
@@ -43,21 +43,19 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, 
     }
   }
 
-  // @ts-ignore vscode reports an error on this, but tsc does not
   forEach(callbackfn: (value: T, key: ID, map: StringableIdMap<ID, T>) => void, thisArg?: any): void {
     super.forEach((value: T, key: ID | string) => {
       callbackfn.call(thisArg, value, fromStringId(key as string) as ID, this);
     });
   }
 
-  // @ts-ignore vscode reports an error on this, but tsc does not
-  [Symbol.iterator](): IterableIterator<[ID, T]> {
+  [Symbol.iterator](): MapIterator<[ID, T]> {
     return this.entries();
   }
 
-  // @ts-ignore vscode reports an error on this, but tsc does not
-  entries(): IterableIterator<[ID, T]> {
+  entries(): MapIterator<[ID, T]> {
     const superIterator = super.entries();
+    // @ts-ignore - vscode doesn't mind this, but tsc does
     return {
       next() {
         const next = superIterator.next();
