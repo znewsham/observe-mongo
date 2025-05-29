@@ -412,7 +412,7 @@ describe("ordered observe", () => {
         pollingInterval: 5
       }
     );
-    assert.strictEqual(addedMock.mock.callCount(), 2, "should have seen the add");
+    assert.strictEqual(addedMock.mock.callCount(), 2, "should have seen the initial add");
     cursor._data.push({ _id: "test3" });
     await setTimeout(7);
     assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen the add");
