@@ -1,4 +1,3 @@
-import type { FindCursor } from "mongodb";
 import { FindCursorWithOptionalMap, ObserveDriver, ObserveOptions, Stringable } from "./types.js";
 import { OrderedDict } from "./orderedDict.js";
 import { diffQueryOrderedChanges, diffQueryUnorderedChanges } from "./diff.js";

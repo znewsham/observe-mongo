@@ -1,6 +1,6 @@
 import { Stringable, fromStringId, stringId } from "./types.js";
 
-export class StringableIdMap<ID extends Stringable, T> extends Map<string, T> {
+export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, T> {
   constructor(entries?: [ID, T][]) {
     super(entries?.map(([key, value]) => [stringId(key), value]));
   }
@@ -26,8 +26,8 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<string, T> {
     return StringableIdMap;
   }
 
-  // @ts-expect-error
-  keys(): IterableIterator<ID> {
+  // @ts-ignore vscode reports an error on this, but tsc does not
+  keys(): IterableIterator<ID | string> {
     const iterator = super.keys();
     return {
       next() {
@@ -35,7 +35,7 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<string, T> {
         if (next.done) {
           return next;
         }
-        return { next: false, value: fromStringId(next.value) as ID}
+        return { next: false, value: fromStringId(next.value as string) as ID}
       },
       [Symbol.iterator]() {
         return this;
@@ -43,19 +43,19 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<string, T> {
     }
   }
 
-  // @ts-expect-error
-  forEach(callbackfn: (value: T, key: ID, map: StringableIdMap<T>) => void, thisArg?: any): void {
-    super.forEach((value: T, key: string) => {
-      callbackfn.call(thisArg, value, fromStringId(key) as ID, this);
+  // @ts-ignore vscode reports an error on this, but tsc does not
+  forEach(callbackfn: (value: T, key: ID, map: StringableIdMap<ID, T>) => void, thisArg?: any): void {
+    super.forEach((value: T, key: ID | string) => {
+      callbackfn.call(thisArg, value, fromStringId(key as string) as ID, this);
     });
   }
 
-  // @ts-expect-error
-  [Symbol.iterator](): Iterator<[ID, T]> {
+  // @ts-ignore vscode reports an error on this, but tsc does not
+  [Symbol.iterator](): IterableIterator<[ID, T]> {
     return this.entries();
   }
 
-  // @ts-expect-error
+  // @ts-ignore vscode reports an error on this, but tsc does not
   entries(): IterableIterator<[ID, T]> {
     const superIterator = super.entries();
     return {
@@ -66,7 +66,7 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<string, T> {
         }
         return {
           done: false,
-          value: [fromStringId(next.value[0]) as ID, next.value[1]]
+          value: [fromStringId(next.value[0] as string) as ID, next.value[1]]
         };
       },
       [Symbol.iterator]() {
