@@ -13,7 +13,7 @@ import {
 
 import { getChannels } from "./getChannels.js";
 
-import type { BulkWriteError, HookedCollection, ExternalBeforeAfterEvent, CommonDefinition } from "mongo-collection-hooks";
+import type { BulkWriteError, HookedCollection, ExternalBeforeAfterEvent, CommonDefinition, ChainedCallbackEventMap, AllEventsFromCollection, HookedListenerCallback } from "mongo-collection-hooks";
 import type { Stringable } from "../types.js";
 import type { Document, InferIdType, ModifyResult, UpdateResult, WithId } from "mongodb";
 
@@ -108,11 +108,22 @@ export function idFromMaybeResult<T extends Document>(result: null | undefined |
 }
 
 
+export type LimitedHookedCollection<
+  TSchema extends Document,
+  ExtraEvents extends Record<string, ExternalBeforeAfterEvent<CommonDefinition & {result: any;}>>
+> = {
+  collectionName: string;
+  on<
+      K extends string & keyof AllEvents,
+      AllEvents extends ChainedCallbackEventMap = AllEventsFromCollection<HookedCollection<TSchema, ExtraEvents>>
+  >(eventName: K, listener: HookedListenerCallback<K, AllEvents>, options?: AllEvents[K]["options"]): LimitedHookedCollection<TSchema, ExtraEvents>;
+}
+
 export function applyRedis<
   TSchema extends Document & { _id?: Stringable },
   ExtraEvents extends Record<string, ExternalBeforeAfterEvent<CommonDefinition & { result: any }>> = {},
 >(
-  collection: Pick<HookedCollection<TSchema, ExtraEvents>, "on" | "collectionName">,
+  collection: LimitedHookedCollection<TSchema, ExtraEvents>,
   publishOptions: PublishOptions
 ) {
   const defaultChannel = collection.collectionName;
