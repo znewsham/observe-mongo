@@ -11,6 +11,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
   #pollingInterval: NodeJS.Timeout | undefined;
   #pollingIntervalTime = DEFAULT_POLLING_INTERVAL;
   #ordered: boolean;
+  #stopped: boolean = false;
   #multiplexer: ObserveMultiplexerInterface<T["_id"], Omit<T, "_id">> | undefined;
   #options: ObserveOptions<T>;
   #running: boolean = false;
@@ -92,10 +93,20 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
       const { _id, ...rest } = doc;
       newDocs.set(_id, rest);
     });
+    if (this.#stopped) {
+      return;
+    }
     await this.#multiplexer.flush();
+    if (this.#stopped) {
+      return;
+    }
     if (this.#ordered) {
+      const docs = (await this.#multiplexer.getDocs()).entries();
+      if (this.#stopped) {
+        return;
+      }
       diffQueryOrderedChanges<T>(
-        Array.from((await this.#multiplexer.getDocs()).entries()).map(([_id, doc]) => ({ _id, ...doc }) as T),
+        Array.from(docs).map(([_id, doc]) => ({ _id, ...doc }) as T),
         Array.from(newDocs.entries()).map(([_id, doc]) => ({ _id, ...doc }) as T),
         this.#multiplexer,
         {
@@ -105,8 +116,12 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
       );
     }
     else {
+      const docs = await this.#multiplexer.getDocs() as StringableIdMap<T["_id"], T>;
+      if (this.#stopped) {
+        return;
+      }
       diffQueryUnorderedChanges<T["_id"], T>(
-        await this.#multiplexer.getDocs() as StringableIdMap<T["_id"], T>,
+        docs,
         newDocs as StringableIdMap<T["_id"], T>,
         this.#multiplexer,
         {
@@ -115,10 +130,14 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
         }
       );
     }
+    if (this.#stopped) {
+      return;
+    }
     await this.#multiplexer.flush();
   }
 
   stop(): void {
+    this.#stopped = true;
     if (this.#pollingInterval) {
       clearInterval(this.#pollingInterval);
     }

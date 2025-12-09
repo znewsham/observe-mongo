@@ -82,7 +82,7 @@ export class RedisObserverDriver<
   #sortDocs: OrderedDict<T["_id"], SortT> | undefined;
   #strictRelevance: boolean;
   #multiplexer: ObserveMultiplexerInterface<T["_id"], ET> | undefined;
-
+  #stopped: boolean = false;
   #channels: string[];
   #mapTransform: (projection: Document) => T = doc => doc as T;
 
@@ -168,6 +168,9 @@ export class RedisObserverDriver<
 
   process(channel: string, message: RedisMessage<T & SortT>, options?: { optimistic?: boolean }): void | Promise<void> {
     const runner = options?.optimistic ? this.#queue.runTask.bind(this.#queue) : this.#queue.queueTask.bind(this.#queue);
+    if (this.#stopped) {
+      return;
+    }
     return runner(async () => {
       if (this.#strategy === Strategy.DEDICATED_CHANNELS) {
         await this.#processDedicatedChannelMessage(message);
@@ -179,6 +182,9 @@ export class RedisObserverDriver<
         await this.#processDefaultMessage(message);
       }
       if (options?.optimistic) {
+        if (this.#stopped) {
+          return;
+        }
         await this.#multiplexer?.flush(true);
       }
     });
@@ -265,8 +271,14 @@ export class RedisObserverDriver<
     if (message[RedisPipe.EVENT] === Events.INSERT) {
       const doc = message[RedisPipe.DOC];
       if (!await this.#has(doc._id) && this.#isDocEligible(doc)) {
+        if (this.#stopped) {
+          return;
+        }
         this.#multiplexer.added(doc._id, this.#projectionFnWithMapWithoutId(doc));
       }
+      return;
+    }
+    if (this.#stopped) {
       return;
     }
     if (message[RedisPipe.EVENT] === Events.UPDATE) {
@@ -274,7 +286,13 @@ export class RedisObserverDriver<
       if (this.#isDocEligible(doc)) {
         const projectedDoc = this.#projectionFnWithMapWithoutId(doc);
         if (await this.#has(doc._id)) {
+          if (this.#stopped) {
+            return;
+          }
           const original = await this.#get(doc._id);
+          if (this.#stopped) {
+            return;
+          }
           if (!original) {
             throw new Error("somehow between #has and #get we lots the doc");
           }
@@ -287,10 +305,16 @@ export class RedisObserverDriver<
           }
         }
         else {
+          if (this.#stopped) {
+            return;
+          }
           this.#multiplexer.added(doc._id, projectedDoc);
         }
       }
       else if (await this.#has(doc._id)){
+        if (this.#stopped) {
+          return;
+        }
         this.#multiplexer.removed(doc._id);
       }
       return;
@@ -316,6 +340,9 @@ export class RedisObserverDriver<
       newDocs.add(doc._id, {});
     });
 
+    if (this.#stopped) {
+      return;
+    }
     diffQueryOrderedChanges(
       [...this.#sortDocs.keys()].map(id => ({ _id: id })),
       [...newDocs.keys()].map(id => ({ _id: id })),
@@ -376,6 +403,9 @@ export class RedisObserverDriver<
   }
 
   #handleLimitSortMaybeAdd = async (message: RedisMessage<T & SortT>) => {
+    if (this.#stopped) {
+      return;
+    }
     const options = this.#cursor.cursorDescription.options;
     const doc = message[RedisPipe.DOC] as T & SortT;
     if (!this.#sortDocs) {
@@ -637,6 +667,7 @@ export class RedisObserverDriver<
 
   stop(): void {
     this.#manager.detach<T, SortT, FilterT>(this);
-    this.#queue.destroy();
+    this.#stopped = true;
+    this.#queue.drainAndDestroy();
   }
 }
