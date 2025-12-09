@@ -26,6 +26,7 @@ class TaskHandle {
     this.task = task;
     this.resolve = resolve;
     this.reject = reject;
+    this.#mustRun = mustRun;
   }
 
   get mustRun() {
