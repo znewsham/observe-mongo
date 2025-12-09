@@ -118,7 +118,12 @@ export class ObserveMultiplexer<
       throw new Error("How'd we stop when we aren't ready?");
     }
     this.#stopped = true;
-    this.#queue.destroy();
+    // if a handle itself calls destroy, we can end up in a bad situation - specifically:
+    // if we have behaviour (e.g., optimistic UX) that requires flushing the queue as part of the DB operation
+    // and the callback calls `handle.stop()` and it's the last handle, we either deadlock or the flush task throws an error (destroy enforces the latter)
+    // but this would be bad - as the original DB operation would record the lack of flush as an error
+    // so instead, here we check to see if there are any flush tasks pending, drain the queue of everything else and queue a destroy task.
+    this.#queue.drainAndDestroy();
     this.#onStop?.();
   }
 

@@ -23,6 +23,19 @@ class DelayedPollingDriver extends PollingDriver {
   }
 }
 
+class NoopDriver extends PollingDriver {
+  constructor(cursor, collection, options) {
+    super(cursor, collection, { ...options, pollingInterval: 1000000 });
+  }
+  /**
+   *
+   * @param {ObserveMultiplexer} multiplexer
+   */
+  async init(multiplexer) {
+    multiplexer.ready();
+  }
+}
+
 
 describe("multiplexer", () => {
   it("should add the initial items to the first handle", async () => {
@@ -179,5 +192,37 @@ describe("multiplexer", () => {
       }
     );
     assert.notEqual(handle2._multiplexer, handle3._multiplexer, "Should NOT have the same multiplexer");
+  });
+
+  it("Shouldn't deadlock", async () => {
+    const collection = new FakeCollection([{ _id: "test" }]);
+    const cursor = collection.find({});
+    const handle = await observeChanges(cursor, collection, {
+      changed: (id, fields) => {
+        handle.stop();
+      }
+    }, { driverClass: NoopDriver });
+
+    /**
+     * @type {ObserveMultiplexer}
+     */
+    const multiplexer = handle._multiplexer;
+    multiplexer.added("test", {});
+    await multiplexer.flush();
+
+    const oldUpdateOne = collection.updateOne;
+    collection.updateOne = async function updateOne({ _id }, mutator) {
+      const result = await oldUpdateOne.call(this, { _id }, mutator);
+      multiplexer.changed(_id, { a: 1 });
+      await multiplexer.flush();
+      return result;
+    };
+
+    const result = await Promise.race([
+      setTimeout(5000).then(() => false),
+      collection.updateOne({ _id: "test" }, { $set: { a: 1 } }).then(() => true)
+    ]);
+
+    assert.strictEqual(result, true, "Should have completed the update without deadlocking");
   });
 });
