@@ -42,7 +42,17 @@ export async function handleRemove(
           [RedisPipe.DOC]: { _id },
           [RedisPipe.UID]: publishOptions.uid
         };
-        await publishOptions.emit(channel, event, options);
+        try {
+          await publishOptions.emit(channel, event, options);
+        }
+        catch (err: any) {
+          if (err?.name?.includes('QueueStoppedError')) {
+            // swallow - this is just a race condition
+          }
+          else {
+            throw err;
+          }
+        }
       }));
     }));
   }
@@ -66,7 +76,17 @@ export async function handleUpdate(
           [RedisPipe.FIELDS]: fields,
           [RedisPipe.UID]: publishOptions.uid
         };
-        await publishOptions.emit(channel, event, options);
+        try {
+          await publishOptions.emit(channel, event, options);
+        }
+        catch (err: any) {
+          if (err?.name?.includes('QueueStoppedError')) {
+            // swallow - this is just a race condition
+          }
+          else {
+            throw err;
+          }
+        }
       }));
     }));
   }
@@ -89,7 +109,17 @@ export async function handleInserts(
           [RedisPipe.DOC]: { _id: id },
           [RedisPipe.UID]: publishOptions.uid
         };
-        await publishOptions.emit(channel, event, options);
+        try {
+          await publishOptions.emit(channel, event, options);
+        }
+        catch (err: any) {
+          if (err?.name?.includes('QueueStoppedError')) {
+            // swallow - this is just a race condition
+          }
+          else {
+            throw err;
+          }
+        }
       }));
     }));
   }
