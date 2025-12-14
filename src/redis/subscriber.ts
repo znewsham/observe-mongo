@@ -172,6 +172,9 @@ export class RedisObserverDriver<
       return;
     }
     return runner(async () => {
+      if (this.#stopped) {
+        return;
+      }
       if (this.#strategy === Strategy.DEDICATED_CHANNELS) {
         await this.#processDedicatedChannelMessage(message);
       }
