@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { FakeCollection } from "mongo-collection-helpers/testHelpers";
-import { beforeEach, describe, it, mock } from "node:test";
+import { describe, it, mock } from "node:test";
 import assert from "node:assert";
 import { setTimeout } from "node:timers/promises";
 import { observe } from "../lib/observe.js";
