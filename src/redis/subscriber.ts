@@ -339,7 +339,10 @@ export class RedisObserverDriver<
       throw new Error("Can't requery without a local ordered dict");
     }
     const newDocs = new OrderedDict<T["_id"], {}>();
-    await this.#cursor.project<{ _id: T["_id"] }>({ _id: 1 }).forEach((doc) => {
+    // the cursor has already been initted, so we must clone it in order to pull just the ID off of it.
+    // But we do want just the ID because (for better or worse) the `addedBefore` handler below will fetch the full document
+    // we don't fetch the full document here because we only need to fetch new documents - which in general will be a small subset
+    await this.#cursor.clone().project<{ _id: T["_id"] }>({ _id: 1 }).forEach((doc) => {
       newDocs.add(doc._id, {});
     });
 

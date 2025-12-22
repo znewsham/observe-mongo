@@ -316,7 +316,7 @@ describe("ordered observeChanges", () => {
         await setTimeout(200);
 
         await handle._multiplexer.flush();
-        // handle.stop();
+        handle.stop();
 
         assert.deepEqual(events, [firstEvent, secondEvent], "events should be in order");
       });
