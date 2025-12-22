@@ -386,7 +386,7 @@ describe("unordered observe", () => {
         await setTimeout(200);
 
         await handle._multiplexer.flush();
-        // handle.stop();
+        handle.stop();
 
         assert.deepEqual(events, [firstEvent, secondEvent], "events should be in order");
       });
@@ -539,5 +539,57 @@ describe("ordered observe", () => {
     handle.stop();
 
     assert.strictEqual(removedMock.mock.callCount(), 1);
+  });
+});
+
+
+describe("observe with sort and limit", () => {
+  function init() {
+    const data = [
+      { _id: "test1", number: 1 },
+      { _id: "test2", number: 2 },
+      { _id: "test3", number: 3 },
+      { _id: "test4", number: 4 },
+      { _id: "test5", number: 5 }
+    ];
+    const collection = new FakeCollection(data);
+
+    return { data, collection };
+  }
+  it("Should receive correct added callbacks", async () => {
+    const { collection } = init();
+    const cursor = collection.find({}, { sort: { number: -1 }, limit: 3 });
+    const addedMock = mock.fn();
+    const handle = await observe(
+      cursor,
+      collection,
+      {
+        addedAt: addedMock,
+        _no_indices: true
+      },
+      {
+        ordered: true,
+        pollingInterval: 5
+      }
+    );
+
+    await setTimeout(10);
+
+    assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen 3 adds");
+    assert.deepEqual(
+      addedMock.mock.calls.map(call => call.arguments[0]._id),
+      ["test5", "test4", "test3"],
+      "should have received the top 3 documents sorted by number desc"
+    );
+
+    await collection.insertOne({ _id: "test6", number: 6 });
+    await setTimeout(20);
+    assert.strictEqual(addedMock.mock.callCount(), 4, "should have seen another add for the new top document");
+    assert.deepEqual(
+      addedMock.mock.calls[3].arguments[0],
+      { _id: "test6", number: 6 },
+      "should have received the new top document"
+    );
+    handle.stop();
   });
 });
