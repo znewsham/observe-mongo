@@ -6,3 +6,4 @@ import "./redis.js";
 import "./cachingChangeObserver.js";
 import "./fromMeteor.js";
 import "./client.js";
+import "./deadlock.js";

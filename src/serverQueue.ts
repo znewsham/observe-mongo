@@ -1,4 +1,4 @@
-import { AsyncResource } from "async_hooks";
+import { AsyncLocalStorage, AsyncResource } from "async_hooks";
 import { AsynchronousQueue as AsynchronousQueueInterface } from "./queue.js"
 import { QueueStoppedError } from "./queueStoppedError.js";
 
@@ -39,6 +39,7 @@ class TaskHandle extends AsyncResource {
     }
   }
 
+
   get mustRun() {
     return this.#mustRun;
   }
@@ -58,15 +59,33 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
   #destroyed: boolean = false;
   #bindTasksToQueueAsyncResource: boolean = false;
   #errorHandler: (error: any) => void;
+  // see the comment in asyncLocalStoragePool.ts for why we do this
+  static #asyncLocalStorage = new AsyncLocalStorage<Array<TaskHandle>>();
+  static #indexCounter = 0;
+  #asyncLocalStorageIndex = AsynchronousQueue.#indexCounter++;
+
+  // we need to be able to track the currently running task to prevent deadlocks in addition to tracking the async context of the run
+  // runTask(() => runTask()) would deadlock and should throw
+  // runTask(() => setTimeout(() => runTask()) is fine and must not throw
+  #runningTask: TaskHandle | null = null;
 
   constructor(bindTasksToQueueAsyncResource = false, errorHandler: (error: any) => void = console.warn) {
     super("AsynchronousQueue");
     this.#errorHandler = errorHandler;
     this.#bindTasksToQueueAsyncResource = bindTasksToQueueAsyncResource;
   }
+
+  safeToRunTask() {
+    // we can't run a task from a task, we'll deadlock
+    return AsynchronousQueue.#asyncLocalStorage.getStore()?.[this.#asyncLocalStorageIndex] !== this.#runningTask;
+  }
+
   async runTask<F extends any>(task: () => F | Promise<F>, name?: string): Promise<F> {
     if (this.#destroyed) {
       throw new QueueStoppedError();
+    }
+    if (!this.safeToRunTask()) {
+      throw new Error("Can't runTask from another task in the same queue");
     }
     return new Promise((resolve, reject) => {
       const taskHandle = new TaskHandle({
@@ -106,9 +125,17 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
       try {
         await asyncResource.runInAsyncScope(async () => {
           // @ts-expect-error - ts thinks it can be undefined. It can't.
-          const result = await next.task();
-          // @ts-expect-error - ts thinks it can be undefined. It can't.
-          next.resolve?.(result);
+          const actualNext: TaskHandle = next;
+          const newStore = (AsynchronousQueue.#asyncLocalStorage.getStore() || []).slice();
+          this.#runningTask = actualNext;
+          newStore[this.#asyncLocalStorageIndex] = this.#runningTask;
+          const result = await AsynchronousQueue.#asyncLocalStorage.run(
+            newStore,
+            // @ts-expect-error - ts thinks it can be undefined. It can't.
+            () => actualNext.task()
+          );
+          this.#runningTask = null;
+          actualNext.resolve?.(result);
         });
       }
       catch (error) {
