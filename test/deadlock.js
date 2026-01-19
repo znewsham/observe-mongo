@@ -116,7 +116,7 @@ function tests(bindTasksToSelf = false) {
   });
 }
 
-// tests(false);
+tests(false);
 
 // this is meteor semantics - tasks run in the context of the queue not the context of the call itself
 // in theory this shouldn've have functional impacts on the queue

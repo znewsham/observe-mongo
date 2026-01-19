@@ -139,18 +139,19 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
 
     do {
       try {
-        const inner = async () => {
+        // the deadlock prevention logic requires that the task itself have the queue's running task provided in it's async context
+        // otherwise how will a call to runTask know it's being called from within a task?
+        // particularly relevant for A -> B -> A cycles where A and B are different queues
+        await next.runInAsyncScope(async () => {
           // @ts-expect-error - ts thinks it can be undefined. It can't.
           const actualNext: TaskHandle = next;
           const newStore = (AsynchronousQueue.#asyncLocalStorage.getStore() || []).slice();
           this.#runningTask = actualNext;
           newStore[this.#asyncLocalStorageIndex] = this.#runningTask;
-
-
-          await AsynchronousQueue.#asyncLocalStorage.run(
-            newStore,
-            async () => {
-              await asyncResource.runInAsyncScope(async () => {
+          await asyncResource.runInAsyncScope(async () => {
+            await AsynchronousQueue.#asyncLocalStorage.run(
+              newStore,
+              async () => {
                 try {
                   const result = await AsynchronousQueue.#asyncLocalStorage.run(
                     newStore,
@@ -165,12 +166,8 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
               });
             }
           );
-        };
+        });
 
-        // the deadlock prevention logic requires that the task itself have the queue's running task provided in it's async context
-        // otherwise how will a call to runTask know it's being called from within a task?
-        // particularly relevant for A -> B -> A cycles where A and B are different queues
-        this.#bindTasksToQueueAsyncResource ? await next.runInAsyncScope(inner) : await inner();
       }
       catch (error) {
         asyncResource.runInAsyncScope(() => {
