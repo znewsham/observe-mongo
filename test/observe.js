@@ -25,7 +25,7 @@ describe("document cloning", () => {
     );
 
     // Wait for initial callbacks
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
 
     // Verify the 'added' callback was called with our document
     assert.strictEqual(addedMock.mock.callCount(), 1, "added callback should be called once");
@@ -37,7 +37,7 @@ describe("document cloning", () => {
     await collection.insertOne({ _id: "testId2", field: "value" });
 
     // Wait for polling to happen
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
 
     // Stop the observer
     handle.stop();
@@ -75,13 +75,13 @@ describe("document cloning", () => {
     );
 
     // Wait for initial setup
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
 
     // Update the document
     originalDoc.value = "updated";
 
     // Wait for polling to detect the change
-    await setTimeout(15);
+    await handle._multiplexer._driver._testAwaitNextPoll();
 
     // Verify the callback was called
     assert.strictEqual(changedMock.mock.callCount(), 1, "changed callback should be called once");
@@ -152,7 +152,7 @@ describe("unordered observe", () => {
     });
     preHandle.stop();
     await collection.insertOne({ _id: "test3" });
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     await addedPromise;
     assert.strictEqual(addedMock.mock.callCount(), 1, "should have seen the add");
     handle.stop();
@@ -207,7 +207,7 @@ describe("unordered observe", () => {
     });
     preHandle.stop();
     await collection.insertOne({ _id: "test3" });
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     await addedPromise;
     assert.strictEqual(addedMock.mock.callCount(), 1, "should have seen the add");
     handle.stop();
@@ -231,9 +231,9 @@ describe("unordered observe", () => {
       }
     );
     await collection.insertOne({ _id: "test3" });
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen the add");
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(addedMock.mock.callCount(), 3, "shouldn't see spurious adds");
@@ -256,7 +256,7 @@ describe("unordered observe", () => {
 
     cursor._data[0] = { ...cursor._data[0], value: "hello" };
 
-    await setTimeout(30);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
     assert.strictEqual(changedMock.mock.callCount(), 1);
   });
@@ -278,7 +278,7 @@ describe("unordered observe", () => {
 
     cursor._data.splice(0, 1);
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(removedMock.mock.callCount(), 1);
@@ -412,12 +412,16 @@ describe("ordered observe", () => {
         pollingInterval: 5
       }
     );
-    assert.strictEqual(addedMock.mock.callCount(), 2, "should have seen the initial add");
-    cursor._data.push({ _id: "test3" });
-    await setTimeout(7);
-    assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen the add");
-    await setTimeout(7);
-    handle.stop();
+    try {
+      assert.strictEqual(addedMock.mock.callCount(), 2, "should have seen the initial add");
+      cursor._data.push({ _id: "test3" });
+      await handle._multiplexer._driver._testAwaitNextPoll();
+      assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen the add");
+      await handle._multiplexer._driver._testAwaitNextPoll();
+    }
+    finally {
+      handle.stop();
+    }
 
     assert.strictEqual(addedMock.mock.callCount(), 3, "shouldn't see spurious adds");
   });
@@ -441,7 +445,7 @@ describe("ordered observe", () => {
 
     cursor._data[0] = { ...cursor._data[0], value: "hello" };
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(changedMock.mock.callCount(), 1);
@@ -479,7 +483,7 @@ describe("ordered observe", () => {
     cursor._data[0] = cursor._data[1];
     cursor._data[1] = swap;
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(movedBeforeMock.mock.callCount(), 1);
@@ -509,7 +513,7 @@ describe("ordered observe", () => {
     cursor._data[0] = cursor._data[1];
     cursor._data[1] = { ...swap, value: "test" };
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(movedBeforeMock.mock.callCount(), 1);
@@ -535,7 +539,7 @@ describe("ordered observe", () => {
 
     cursor._data.splice(0, 1);
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(removedMock.mock.callCount(), 1);
@@ -573,7 +577,7 @@ describe("observe with sort and limit", () => {
       }
     );
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
 
     assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen 3 adds");
     assert.deepEqual(
@@ -583,7 +587,7 @@ describe("observe with sort and limit", () => {
     );
 
     await collection.insertOne({ _id: "test6", number: 6 });
-    await setTimeout(20);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     assert.strictEqual(addedMock.mock.callCount(), 4, "should have seen another add for the new top document");
     assert.deepEqual(
       addedMock.mock.calls[3].arguments[0],

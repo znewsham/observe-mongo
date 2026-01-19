@@ -154,6 +154,8 @@ describe("multiplexer", () => {
       }
     );
     assert.strictEqual(handle2._multiplexer, handle3._multiplexer, "Should have the same multiplexer");
+    handle2.stop();
+    handle3.stop();
   });
   it("multiplexer is lost after stopping both", async () => {
     const collection = new FakeCollection([{ _id: "test" }, { _id: "test2" }]);
@@ -192,6 +194,7 @@ describe("multiplexer", () => {
       }
     );
     assert.notEqual(handle2._multiplexer, handle3._multiplexer, "Should NOT have the same multiplexer");
+    handle3.stop();
   });
 
   it("Shouldn't deadlock", async () => {

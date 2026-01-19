@@ -1,8 +1,10 @@
 import { FakeCollection, FakeFindCursor } from "mongo-collection-helpers/testHelpers";
-import { describe, it, mock } from "node:test";
+import { describe, it, mock as testMock } from "node:test";
 import assert from "node:assert";
 import { setTimeout } from "node:timers/promises";
 import { observeChanges } from "../lib/observe.js";
+import { AsynchronousQueue } from "../lib/serverQueue.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
  * @typedef {import("../lib/index.js").Observer}
@@ -90,7 +92,7 @@ function makeCollection() {
 const Meteor = {};
 
 function withCallbackLogger(callbacksArray, _isServer, fn) {
-  const mocks = callbacksArray.map(() => mock.fn());
+  const mocks = callbacksArray.map(() => testMock.fn());
   const callbacks = Object.fromEntries(callbacksArray.map((callback, index) => [callback, mocks[index]]));
   callbacks.expectResult = function expectResult(callbackName, result) {
     const mock = callbacks[callbackName].mock;
@@ -449,5 +451,43 @@ describe("observeChanges From Meteor", () => {
       await logger.expectNoResult();
       handle.stop();
     });
+  });
+
+  it("AsynchronousQueue(true) queued tasks should execute within the scope of where the queue was created", async () => {
+    const asyncLocalStorage = new AsyncLocalStorage();
+    /** @type AsynchronousQueue */
+    let queue;
+    asyncLocalStorage.run({ value: 42 }, () => {
+      queue = new AsynchronousQueue(true);
+    });
+
+    await asyncLocalStorage.run({ value: 100 }, () => {
+      return queue.runTask(async () => {
+        const store = asyncLocalStorage.getStore();
+        assert.strictEqual(store.value, 42);
+      });
+    });
+
+    // wait for the task to complete
+    await queue.flush();
+  });
+
+  it("AsynchronousQueue(false) queued tasks should execute within the scope of where the task was queued", async () => {
+    const asyncLocalStorage = new AsyncLocalStorage();
+    /** @type AsynchronousQueue */
+    let queue;
+    asyncLocalStorage.run({ value: 42 }, () => {
+      queue = new AsynchronousQueue(false);
+    });
+
+    await asyncLocalStorage.run({ value: 100 }, () => {
+      return queue.runTask(async () => {
+        const store = asyncLocalStorage.getStore();
+        assert.strictEqual(store.value, 100);
+      });
+    });
+
+    // wait for the task to complete
+    await queue.flush();
   });
 });
