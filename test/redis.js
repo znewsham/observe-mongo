@@ -1016,5 +1016,24 @@ describe("Redis Observer", () => {
       assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[0], "4", "should have called addedBefore with the correct ID");
     });
 
+    it("should include all document fields in addedBefore when there is a sort but no projection", async () => {
+      const {
+        collection,
+        multiplexer,
+        subscriber
+      } = await setup(
+        {},
+        { sort: { number: 1 }, skip: 1 },
+        [{ _id: "1", number: 1, name: "one" }, { _id: "2", number: 2, name: "two" }]
+      );
+      const addedBeforeMock = mock.method(multiplexer, "addedBefore");
+      await collection.insertOne({ _id: "3", number: 0, name: "zero" });
+      await subscriber._queue.flush();
+      assert.strictEqual(addedBeforeMock.mock.callCount(), 1, "should have called addedBefore");
+      assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[0], "1", "should have called addedBefore with the correct ID");
+      // The document fetched during requery should include all fields, not just sort fields
+      assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[1].name, "one", "should include non-sort fields in the document");
+    });
+
   });
 });
