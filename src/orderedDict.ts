@@ -74,12 +74,13 @@ export class OrderedDict<
     if (!beforeItem) {
       if (!this.#head) {
         this.#head = newItem;
+        this.#tail = newItem;
       }
       else {
-        const prev = this.#tail || this.#head;
+        const prev = this.#tail!;
         this.#tail = newItem;
-        prev.next = this.#tail;
-        this.#tail.prev = prev;
+        prev.next = newItem;
+        newItem.prev = prev;
       }
     }
     else {

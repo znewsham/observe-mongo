@@ -4,5 +4,6 @@ import "./observeChanges.js";
 import "./matcher.js";
 import "./redis.js";
 import "./cachingChangeObserver.js";
+import "./orderedDict.js";
 import "./fromMeteor.js";
 import "./client.js";
