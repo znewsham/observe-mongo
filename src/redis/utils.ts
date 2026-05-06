@@ -34,8 +34,13 @@ export function extractIdsFromSelector<T extends { _id: Stringable }>(selector: 
       const type = getType(idField);
       if (type === OperationType.FILTER) {
         const idFilter = idField as FilterOperators<Stringable>;
-        idFilter.$in?.forEach(id => ids.add(id));
-        if (idFilter.$eq) {
+        // Skip null/undefined - stringId would crash trying to read `_bsontype` on them.
+        idFilter.$in?.forEach(id => {
+          if (id !== null && id !== undefined) {
+            ids.add(id);
+          }
+        });
+        if (idFilter.$eq !== null && idFilter.$eq !== undefined) {
           ids.add(idFilter.$eq);
         }
       }
