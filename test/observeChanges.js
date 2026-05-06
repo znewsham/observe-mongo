@@ -22,9 +22,10 @@ describe("unordered observeChanges", () => {
       }
     );
     cursor._data.push({ _id: "test3" });
-    await setTimeout(7);
+
+    await handle._multiplexer._driver._testAwaitNextPoll();
     assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen the add");
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(addedMock.mock.callCount(), 3, "shouldn't see spurious adds");
@@ -47,7 +48,7 @@ describe("unordered observeChanges", () => {
 
     cursor._data[0] = { ...cursor._data[0], value: "hello" };
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(changedMock.mock.callCount(), 1);
@@ -70,7 +71,7 @@ describe("unordered observeChanges", () => {
 
     cursor._data.splice(0, 1);
 
-    await setTimeout(60);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
 
@@ -97,9 +98,9 @@ describe("ordered observeChanges", () => {
     );
     assert.strictEqual(addedMock.mock.callCount(), 2, "should have seen the add");
     cursor._data.push({ _id: "test3" });
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     assert.strictEqual(addedMock.mock.callCount(), 3, "should have seen the add");
-    await setTimeout(7);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(addedMock.mock.callCount(), 3, "shouldn't see spurious adds");
@@ -123,7 +124,7 @@ describe("ordered observeChanges", () => {
 
     cursor._data[0] = { ...cursor._data[0], value: "hello" };
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(changedMock.mock.callCount(), 1);
@@ -152,7 +153,7 @@ describe("ordered observeChanges", () => {
     cursor._data[0] = cursor._data[1];
     cursor._data[1] = swap;
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(movedBeforeMock.mock.callCount(), 1);
@@ -181,7 +182,7 @@ describe("ordered observeChanges", () => {
     cursor._data[0] = cursor._data[1];
     cursor._data[1] = { ...swap, value: "test" };
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(movedBeforeMock.mock.callCount(), 1);
@@ -206,7 +207,7 @@ describe("ordered observeChanges", () => {
 
     cursor._data.splice(0, 1);
 
-    await setTimeout(10);
+    await handle._multiplexer._driver._testAwaitNextPoll();
     handle.stop();
 
     assert.strictEqual(removedMock.mock.callCount(), 1);

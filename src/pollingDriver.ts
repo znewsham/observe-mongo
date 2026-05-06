@@ -15,6 +15,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
   #multiplexer: ObserveMultiplexerInterface<T["_id"], Omit<T, "_id">> | undefined;
   #options: ObserveOptions<T>;
   #running: boolean = false;
+  #testResolvesAwaitingPoll: { resolve: (value: void | PromiseLike<void>) => void }[] = [];
   constructor(
     cursor: FindCursorWithOptionalMap<T>,
     _collection: any,
@@ -65,6 +66,8 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
       this.#running = true;
       try {
         await this._poll();
+        this.#testResolvesAwaitingPoll.forEach(({ resolve }) => resolve());
+        this.#testResolvesAwaitingPoll = [];
       }
       finally {
         this.#running = false;
@@ -75,6 +78,21 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
 
   get _cursor() {
     return this.#cursor;
+  }
+
+  private async _testAwaitNextPoll(): Promise<void> {
+    let runAgain = false;
+    if (this.#running) {
+      runAgain = true;
+    }
+    await new Promise<void>((resolve) => {
+      this.#testResolvesAwaitingPoll.push({ resolve });
+    });
+    if (runAgain) {
+      await new Promise<void>((resolve) => {
+        this.#testResolvesAwaitingPoll.push({ resolve });
+      });
+    }
   }
 
   // It's annoying that the driver and the multiplexer need to maintain separate docs maps

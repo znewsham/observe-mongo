@@ -1,6 +1,7 @@
-import { AsyncResource } from "async_hooks";
+import { AsyncLocalStorage, AsyncResource } from "async_hooks";
 import { AsynchronousQueue as AsynchronousQueueInterface } from "./queue.js"
 import { QueueStoppedError } from "./queueStoppedError.js";
+import { setTimeout } from "timers/promises";
 
 
 type TaskHandleOptions = {
@@ -39,6 +40,7 @@ class TaskHandle extends AsyncResource {
     }
   }
 
+
   get mustRun() {
     return this.#mustRun;
   }
@@ -58,15 +60,47 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
   #destroyed: boolean = false;
   #bindTasksToQueueAsyncResource: boolean = false;
   #errorHandler: (error: any) => void;
+  // see the comment in asyncLocalStoragePool.ts for why we do this
+  static #asyncLocalStorage = new AsyncLocalStorage<Array<TaskHandle | undefined>>();
+  static #indexCounter = 0;
+  #asyncLocalStorageIndex = AsynchronousQueue.#indexCounter++;
+
+  // we need to be able to track the currently running task to prevent deadlocks in addition to tracking the async context of the run
+  // runTask(() => runTask()) would deadlock and should throw
+  // runTask(() => setTimeout(() => runTask()) is fine and must not throw
+  #runningTask: TaskHandle | null = null;
 
   constructor(bindTasksToQueueAsyncResource = false, errorHandler: (error: any) => void = console.warn) {
     super("AsynchronousQueue");
     this.#errorHandler = errorHandler;
     this.#bindTasksToQueueAsyncResource = bindTasksToQueueAsyncResource;
   }
+
+  /**
+   * Dangerous - this flags a queue as safe to run tasks from within tasks.
+   * This can lead to deadlocks if you're not extremely careful.
+   * The usecase here is when you know it's impossible for a deadlock to occur - see the test suite for an example
+   * It's expected this is ran from within a clean async context - it directly modifies state.
+   */
+  _markSafeToRunTask() {
+    const store = AsynchronousQueue.#asyncLocalStorage.getStore();
+    if (!store) {
+      return;
+    }
+    store[this.#asyncLocalStorageIndex] = undefined;
+  }
+
+  safeToRunTask() {
+    // we can't run a task from a task, we'll deadlock
+    return AsynchronousQueue.#asyncLocalStorage.getStore()?.[this.#asyncLocalStorageIndex] !== this.#runningTask;
+  }
+
   async runTask<F extends any>(task: () => F | Promise<F>, name?: string): Promise<F> {
     if (this.#destroyed) {
       throw new QueueStoppedError();
+    }
+    if (!this.safeToRunTask()) {
+      throw new Error("Can't runTask from another task in the same queue");
     }
     return new Promise((resolve, reject) => {
       const taskHandle = new TaskHandle({
@@ -102,14 +136,38 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
       return;
     }
     const asyncResource = this.#bindTasksToQueueAsyncResource ? this : next;
+
     do {
       try {
-        await asyncResource.runInAsyncScope(async () => {
+        // the deadlock prevention logic requires that the task itself have the queue's running task provided in it's async context
+        // otherwise how will a call to runTask know it's being called from within a task?
+        // particularly relevant for A -> B -> A cycles where A and B are different queues
+        await next.runInAsyncScope(async () => {
           // @ts-expect-error - ts thinks it can be undefined. It can't.
-          const result = await next.task();
-          // @ts-expect-error - ts thinks it can be undefined. It can't.
-          next.resolve?.(result);
+          const actualNext: TaskHandle = next;
+          const newStore = (AsynchronousQueue.#asyncLocalStorage.getStore() || []).slice();
+          this.#runningTask = actualNext;
+          newStore[this.#asyncLocalStorageIndex] = this.#runningTask;
+          await asyncResource.runInAsyncScope(async () => {
+            await AsynchronousQueue.#asyncLocalStorage.run(
+              newStore,
+              async () => {
+                try {
+                  const result = await AsynchronousQueue.#asyncLocalStorage.run(
+                    newStore,
+                      // @ts-expect-error - ts thinks it can be undefined. It can't.
+                    () => actualNext.task()
+                  );
+                  actualNext.resolve?.(result);
+                }
+                finally {
+                  this.#runningTask = null;
+                }
+              });
+            }
+          );
         });
+
       }
       catch (error) {
         asyncResource.runInAsyncScope(() => {
@@ -120,6 +178,13 @@ export class AsynchronousQueue extends AsyncResource implements AsynchronousQueu
             this.#errorHandler(error);
           }
         });
+      }
+      if (this.#queue.length) {
+        // this ensures the eventloop has a chance to run after a task completes.
+        // this is equivalent to meteor's _scheduleRun call but is easier to reason about with async/await
+        // interleavings of _scheduleRun + run are hard to comprehend otherwise.
+        // it is also this line (surprisingly) that ensures async stacks are correct with nested run/queueTask calls.
+        await setTimeout(1);
       }
       next = this.#queue.shift();
     } while (next !== undefined);

@@ -7,3 +7,4 @@ import "./cachingChangeObserver.js";
 import "./orderedDict.js";
 import "./fromMeteor.js";
 import "./client.js";
+import "./deadlock.js";
