@@ -509,6 +509,28 @@ describe("Redis Observer", () => {
       await subscriber._queue.flush();
       assert.strictEqual(addedMock.mock.callCount(), 1, "Should not have called added again");
     });
+    it("should skip null/undefined ids in $in without throwing", async () => {
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const cursor = collection.find({ _id: { $in: [undefined, null, "test"] } }, {});
+
+      const subscriber = new RedisObserverDriver(
+        cursor,
+        collection,
+        {
+          ordered: false,
+          manager: subscriptionManager,
+          Matcher: Minimongo.Matcher
+        }
+      );
+
+      assert.deepStrictEqual(
+        subscriber.channels,
+        [`${collectionName}::test`],
+        "should only subscribe to channels for non-null, non-undefined ids"
+      );
+    });
   });
   describe("limit sort processor", () => {
     // insert test cases
