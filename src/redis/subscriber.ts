@@ -370,13 +370,7 @@ export class RedisObserverDriver<
           const actualDoc = id === newCommer._id ? newCommer as T & SortT : await this.#collection.findOne(
             // @ts-expect-error
             { _id: id },
-            {
-              projection: unionOfProjections([
-                this.#cursor.cursorDescription.options.projection as NestedProjectionOfTSchema<T>,
-                (this.#sortProjection || {}) as NestedProjectionOfTSchema<T>,
-                this.#matcher._path
-              ])
-            }
+            { projection: this.completeProjection }
           ) as T & SortT;
           if (!actualDoc) {
             return;

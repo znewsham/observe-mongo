@@ -875,6 +875,25 @@ describe("Redis Observer", () => {
     });
   });
   describe("limit sort processor", () => {
+    it("should not throw when requery runs with no filter (regression: TODO 4)", async () => {
+      // No filter → no matcher → #requery accessing this.#matcher._path
+      // would throw TypeError on the first cross-window insert with skip.
+      // The throw is swallowed by the queue's default error handler
+      // (console.warn), so the failure surfaces as a missing addedBefore.
+      const { collection, multiplexer, subscriber } = await setup(
+        undefined,
+        { sort: { number: 1 }, skip: 1 },
+        [{ _id: "1", number: 1 }]
+      );
+      const addedBeforeMock = mock.method(multiplexer, "addedBefore");
+      await collection.insertOne({ _id: "2", number: 0 });
+      await subscriber._queue.flush();
+      assert.strictEqual(
+        addedBeforeMock.mock.callCount(),
+        1,
+        "should have called addedBefore for the doc that became visible after skip"
+      );
+    });
     it("should accept array-form sort and produce a sort projection by field name (regression: TODO 3)", async () => {
       const { subscriber } = await setup(
         {},
