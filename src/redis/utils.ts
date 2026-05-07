@@ -33,6 +33,9 @@ export function extractIdsFromSelector<T extends { _id: Stringable }>(selector: 
     else if (selector._id instanceof RegExp || (selector._id as BSONRegExp)._bsontype === "BSONRegExp") {
       // do nothing
     }
+    else if (selector._id instanceof Date) {
+      ids.add(selector._id);
+    }
     else {
       const idField: ObjectId | FilterOperators<Stringable> = selector._id as ObjectId | FilterOperators<Stringable>;
       const type = getType(idField);

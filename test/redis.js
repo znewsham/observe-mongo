@@ -851,6 +851,43 @@ describe("Redis Observer", () => {
     // those happens.
     it.skip("should respect strictRelevance: false (regression: TODO 1)", () => {});
 
+    it("should subscribe to a dedicated channel for a Date _id (regression: TODO 11)", () => {
+      // getType(new Date()) returns EMPTY because Object.keys(date) is [],
+      // so the Date is silently dropped from extractIdsFromSelector and
+      // the subscriber registers no per-id channel.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const date = new Date(0);
+      const subscriber = new RedisObserverDriver(
+        collection.find({ _id: date }, {}),
+        collection,
+        { ordered: false, manager: subscriptionManager, Matcher: Minimongo.Matcher }
+      );
+      assert.deepStrictEqual(
+        subscriber.channels,
+        [`${collectionName}::${stringId(date)}`],
+        "should produce a per-id channel keyed on the stringified Date"
+      );
+    });
+
+    it("should subscribe to a dedicated channel for a Date _id under $eq (regression: TODO 11)", () => {
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const date = new Date(0);
+      const subscriber = new RedisObserverDriver(
+        collection.find({ _id: { $eq: date } }, {}),
+        collection,
+        { ordered: false, manager: subscriptionManager, Matcher: Minimongo.Matcher }
+      );
+      assert.deepStrictEqual(
+        subscriber.channels,
+        [`${collectionName}::${stringId(date)}`],
+        "should produce a per-id channel for { $eq: Date }"
+      );
+    });
+
     it("should subscribe to a dedicated channel for literal _id: 0 (regression: TODO 6)", () => {
       // Two truthy checks erase 0 as a legitimate _id:
       //   - getStrategy: `if (selector && selector._id)` falls through to DEFAULT for _id: 0.
