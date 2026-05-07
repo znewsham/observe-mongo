@@ -442,7 +442,7 @@ export class RedisObserverDriver<
 
         if (options.limit && this.#sortDocs.size > options.limit && this.#sortDocs.tail) {
           const tail = this.#sortDocs.tail;
-          this.#sortDocs.remove(this.#sortDocs.tail.value);
+          this.#sortDocs.remove(tail.key);
           this.#multiplexer.removed(tail.value._id);
         }
       }
@@ -476,7 +476,7 @@ export class RedisObserverDriver<
       const allDocs = [sortableDoc, ...this.#sortDocs.values()].sort(this.#comparator);
       const index = allDocs.indexOf(sortableDoc);
       const before = allDocs[index + 1];
-      this.#sortDocs.add(this.#sortProjectionFn(doc), before);
+      this.#sortDocs.add(doc._id, this.#sortProjectionFn(doc), before?._id);
       this.#multiplexer.addedBefore(doc._id, this.#projectionFnWithMapWithoutId(doc), before?._id);
       if (options.limit && this.#sortDocs.size > options.limit) {
         if (this.#sortDocs.tail) {
@@ -552,7 +552,7 @@ export class RedisObserverDriver<
             const afterSortIndex = allDocs.findIndex(({ _id }) => _id === doc._id);
             const afterSortBefore = allDocs[afterSortIndex + 1];
             if (beforeSortIndex !== afterSortIndex) {
-              this.#multiplexer.movedBefore(doc._id, afterSortBefore);
+              this.#multiplexer.movedBefore(doc._id, afterSortBefore?._id);
             }
           }
         }

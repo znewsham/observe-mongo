@@ -1057,6 +1057,94 @@ describe("Redis Observer", () => {
       assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[1].name, "one", "should include non-sort fields in the document");
     });
 
+    it("should key #sortDocs by _id when inserting in the middle (regression: line 479)", async () => {
+      const { collection, multiplexer, subscriber } = await setup(
+        { value: { $lt: 10 } },
+        { sort: { number: 1 } },
+        [{ _id: "1", number: 1, value: 5 }, { _id: "3", number: 3, value: 5 }]
+      );
+
+      // Middle insert. The buggy add() call passed the sort projection as
+      // the key (instead of doc._id) and the before-doc as the value, so
+      // #sortDocs ended up with the entry under a stringified-sortFields
+      // key. multiplexer.addedBefore still fires (so callers see the new
+      // doc), but #sortDocs.has(doc._id) is now false.
+      await collection.insertOne({ _id: "2", number: 2, value: 5 });
+      await subscriber._queue.flush();
+
+      const removedMock = mock.method(multiplexer, "removed");
+
+      // Make _id "2" ineligible. The UPDATE handler checks #sortDocs.has —
+      // if true it fires removed, if false it returns silently. With the
+      // bug "2" isn't keyed by its _id so the removed event never fires.
+      await collection.updateOne({ _id: "2" }, { $set: { value: 100 } });
+      await subscriber._queue.flush();
+
+      assert.strictEqual(removedMock.mock.callCount(), 1, "should have fired removed when the ineligible doc was in the set");
+      assert.strictEqual(removedMock.mock.calls[0].arguments[0], "2");
+    });
+
+    it("should evict the actual tail on overflow when inserting before the head (regression: line 445)", async () => {
+      const { collection, multiplexer, subscriber } = await setup(
+        {},
+        { sort: { number: 1 }, limit: 2 },
+        [{ _id: "1", number: 1 }, { _id: "2", number: 2 }]
+      );
+
+      const removedMock = mock.method(multiplexer, "removed");
+
+      // First overflow: insert "0" before head, evicts "2".
+      await collection.insertOne({ _id: "0", number: 0 });
+      await subscriber._queue.flush();
+
+      // Second overflow: insert "-1" before head. With a clean #sortDocs the
+      // new tail is "1" so we'd evict "1". The buggy code passed tail.value
+      // (a SortT, not the key) to OrderedDict.remove() so the eviction was a
+      // silent no-op and #sortDocs.tail kept pointing at the stale "2" — so
+      // the second overflow tries to evict "2" again.
+      await collection.insertOne({ _id: "-1", number: -1 });
+      await subscriber._queue.flush();
+
+      assert.strictEqual(removedMock.mock.callCount(), 2);
+      assert.strictEqual(removedMock.mock.calls[0].arguments[0], "2");
+      assert.strictEqual(
+        removedMock.mock.calls[1].arguments[0],
+        "1",
+        "second overflow should evict '1' (the new tail), not the stale '2'"
+      );
+    });
+
+    it("should evict the actual tail on overflow when inserting in the middle (regression: line 484)", async () => {
+      const { collection, multiplexer, subscriber } = await setup(
+        {},
+        { sort: { number: 1 }, limit: 2 },
+        [{ _id: "1", number: 1 }, { _id: "3", number: 3 }]
+      );
+
+      const addedBeforeMock = mock.method(multiplexer, "addedBefore");
+
+      // Middle insert with overflow: "2" lands between "1" and "3" and "3"
+      // should be evicted from #sortDocs. Buggy code passed tail.value to
+      // remove() so #sortDocs still contains "3" with #sortDocs.tail
+      // pointing at it.
+      await collection.insertOne({ _id: "2", number: 2 });
+      await subscriber._queue.flush();
+
+      // Insert "2.5". With a clean #sortDocs the tail is "2" (n=2) so the
+      // doc lands AFTER the tail — limit is full, no event. With the buggy
+      // state #sortDocs.tail is still "3" (n=3) so the driver routes the
+      // doc through the middle path and (incorrectly) emits another
+      // addedBefore.
+      await collection.insertOne({ _id: "2.5", number: 2.5 });
+      await subscriber._queue.flush();
+
+      assert.strictEqual(
+        addedBeforeMock.mock.callCount(),
+        1,
+        "second insert should produce no new addedBefore — it sorts after the new tail and the limit is full"
+      );
+    });
+
     it("should clean up sortDocs in requery's removed callback", async () => {
       const {
         collection,
