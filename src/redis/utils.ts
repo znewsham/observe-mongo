@@ -27,7 +27,7 @@ export function extractIdsFromSelector<T extends { _id: Stringable }>(selector: 
     andIds.forEach(idSet => idSet.forEach(id => ids.add(id)));
   }
   if (selector._id !== null && selector._id !== undefined) {
-    if (typeof selector._id === "string" || typeof selector._id === "number") {
+    if (typeof selector._id === "string" || typeof selector._id === "number" || typeof selector._id === "boolean") {
       ids.add(selector._id);
     }
     else if (selector._id instanceof RegExp || (selector._id as BSONRegExp)._bsontype === "BSONRegExp") {
