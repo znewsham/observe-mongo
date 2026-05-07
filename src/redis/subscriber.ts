@@ -324,7 +324,12 @@ export class RedisObserverDriver<
     }
     else if (message[RedisPipe.EVENT] === Events.REMOVE) {
       const doc = message[RedisPipe.DOC];
-      this.#multiplexer.removed(doc._id);
+      if (await this.#has(doc._id)) {
+        if (this.#stopped) {
+          return;
+        }
+        this.#multiplexer.removed(doc._id);
+      }
       return;
     }
     throw new Error("not implemented");

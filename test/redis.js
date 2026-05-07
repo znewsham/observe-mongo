@@ -308,6 +308,42 @@ describe("Redis Observer", () => {
       await subscriber._queue.flush();
       assert.strictEqual(addedMock.mock.callCount(), 1, "Should not have called added again");
     });
+    it("should not fire removed for unknown ids (regression: TODO 11)", async () => {
+      // The default-strategy REMOVE branch in #processDefaultMessage fires
+      // multiplexer.removed unconditionally, unlike the UPDATE branch and
+      // the dedicated-channels path, which both guard with `await this.#has`.
+      // Downstream observers should never see a `removed` for an id that
+      // was never `added`.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [{ _id: "known" }], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const cursor = collection.find({}, {});
+      const multiplexer = new ObserveMultiplexer({ ordered: false });
+      const subscriber = new RedisObserverDriver(
+        cursor,
+        collection,
+        {
+          ordered: false,
+          manager: subscriptionManager,
+          Matcher: Minimongo.Matcher
+        }
+      );
+
+      multiplexer.addHandleAndSendInitialAdds({ observes() { return false; } });
+      await subscriber.init(multiplexer);
+      await subscriber._queue.flush();
+
+      const removedMock = mock.method(multiplexer, "removed");
+
+      await pubSubManager.emit(collectionName, {
+        [RedisPipe.EVENT]: Events.REMOVE,
+        [RedisPipe.DOC]: { _id: "unknown" },
+        [RedisPipe.UID]: "someone-else"
+      });
+      await subscriber._queue.flush();
+
+      assert.strictEqual(removedMock.mock.callCount(), 0, "should not forward removed for an id the subscriber never added");
+    });
   });
   describe("dedicated channels processor", () => {
     it("Initial added works", async () => {
