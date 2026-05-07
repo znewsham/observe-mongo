@@ -17,16 +17,17 @@ export type Stringable = string
   // | { toHexString() : string } // this is a proxy for ObjectId - see above.
   | Date
   | number
+  | boolean
   | ObjectId
   | {[k in string]: Stringable }// Record<string, Stringable>
   | Stringable[];
 
 type EJSONItem = { $type: "oid", $value: string } | { $type: "date", $value: number }
-type Item = EJSONItem | string | number | { [k in string]: Item } | Item[];
+type Item = EJSONItem | string | number | boolean | { [k in string]: Item } | Item[];
 
 
 function jsonable(stringable: Stringable): Item {
-  if (typeof stringable === "string" || typeof stringable === "number") {
+  if (typeof stringable === "string" || typeof stringable === "number" || typeof stringable === "boolean") {
     return stringable;
   }
   if (stringable instanceof Date) {
@@ -49,7 +50,10 @@ export function stringId(stringable: Stringable): string {
   return JSON.stringify(jsonable(stringable));
 }
 
-function jsonToObject(json: { $type: "oid" | "date", $value: any } | { [k in string]: string | number | { $type: "oid" | "date", $value: any } }): Stringable {
+function jsonToObject(json: { $type: "oid" | "date", $value: any } | { [k in string]: string | number | { $type: "oid" | "date", $value: any } } | null): Stringable {
+  if (json === null) {
+    return null as unknown as Stringable;
+  }
   if (json.$type) {
     if (json.$type === "date") {
       return new Date(json.$value);
@@ -95,6 +99,9 @@ export function naiveEquals<T>(doc1: T, doc2: T): boolean {
 
 export type Clone = <T>(doc: T) => T;
 export function naiveClone<T>(doc: T): T {
+  if (doc === undefined) {
+    return doc;
+  }
   return JSON.parse(JSON.stringify(doc));
 }
 
@@ -280,6 +287,7 @@ export type CachingChangeObserverOptions = {
 
 export type CachingChangeObserver<ID extends Stringable, T extends StringObjectWithoutID> = ObserveChangesObserver<ID, T> & {
   forEach(iterator: (doc: T, id: ID) => void): void;
+  forEachAsync(iterator: (doc: T, id: ID) => void | Promise<void>): Promise<void>;
   indexOf(id: ID): number;
   size(): number;
   get(id: ID): T | undefined;
