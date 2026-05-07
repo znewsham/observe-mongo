@@ -33,10 +33,6 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, 
     return this;
   }
 
-  static get [Symbol.species]() {
-    return StringableIdMap;
-  }
-
   keys(): MapIterator<ID | string> {
     const iterator = super.keys();
     // @ts-ignore - vscode doesn't mind this, but tsc does
