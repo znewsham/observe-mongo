@@ -395,6 +395,54 @@ describe("unordered observe", () => {
 });
 
 describe("ordered observe", () => {
+  it("addedAt receives the actual index of the inserted document", async () => {
+    const collection = new FakeCollection([{ _id: "test" }]);
+    const cursor = collection.find({});
+    const addedMock = mock.fn();
+    const handle = await observe(
+      cursor,
+      collection,
+      { addedAt: addedMock },
+      { ordered: true, pollingInterval: 5 }
+    );
+
+    assert.strictEqual(addedMock.mock.callCount(), 1, "should have seen the initial add");
+    assert.strictEqual(
+      addedMock.mock.calls[0].arguments[1],
+      0,
+      "addedAt should report index 0 for the first document"
+    );
+    handle.stop();
+  });
+  it("addedAt receives the actual index when a document is inserted before another", async () => {
+    const collection = new FakeCollection([{ _id: "a", field: 1 }]);
+    const cursor = collection.find({}, { sort: { field: 1 } });
+    const addedMock = mock.fn();
+    const handle = await observe(
+      cursor,
+      collection,
+      { addedAt: addedMock },
+      { ordered: true, pollingInterval: 5 }
+    );
+
+    assert.strictEqual(addedMock.mock.callCount(), 1, "should have seen the initial add");
+
+    cursor._data.unshift({ _id: "b", field: 0 });
+    await setTimeout(10);
+
+    assert.strictEqual(addedMock.mock.callCount(), 2, "should have seen the new add");
+    assert.strictEqual(
+      addedMock.mock.calls[1].arguments[0]._id,
+      "b",
+      "second addedAt call should be for the new doc"
+    );
+    assert.strictEqual(
+      addedMock.mock.calls[1].arguments[1],
+      0,
+      "addedAt should report index 0 for a doc inserted before all existing docs"
+    );
+    handle.stop();
+  });
   it("additional addedBefores are received", async () => {
     const data = [{ _id: "test" }, { _id: "test2" }];
     const collection = new FakeCollection(data);

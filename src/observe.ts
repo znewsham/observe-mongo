@@ -122,6 +122,11 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         if (suppressed) {
           return;
         }
+        const addedAtIndex = indices
+          ? before
+            ? cache.indexOf(before)
+            : cache.size()
+          : -1;
         cache.addedBefore(id, { _id: id, ...fields }, before);
         if (!(observeCallbacks.addedAt || observeCallbacks.added)) {
           return;
@@ -134,11 +139,7 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         if (observeCallbacks.addedAt) {
           return observeCallbacks.addedAt(
             doc,
-            indices
-              ? before
-                ? cache.indexOf(before)
-                : cache.size()
-              : -1,
+            addedAtIndex,
             beforeDoc
           );
         }
