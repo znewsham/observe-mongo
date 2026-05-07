@@ -35,7 +35,7 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, 
         if (next.done) {
           return next;
         }
-        return { next: false, value: fromStringId(next.value as string) as ID}
+        return { done: false, value: fromStringId(next.value as string) as ID};
       },
       [Symbol.iterator]() {
         return this;

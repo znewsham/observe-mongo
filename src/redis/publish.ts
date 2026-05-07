@@ -162,7 +162,7 @@ export function applyRedis<
     resultOrig,
     error
   }) => {
-    let insertedIds = resultOrig?.insertedId ? [resultOrig.insertedId] : [];
+    let insertedIds = resultOrig?.insertedId !== null && resultOrig?.insertedId !== undefined ? [resultOrig.insertedId] : [];
     if ((error as BulkWriteError)?.insertedIds) {
       insertedIds = Object.values(error.insertedIds);
     }
@@ -191,7 +191,7 @@ export function applyRedis<
     args: [, options],
     _id
   }) => {
-    if (_id) { // it's entirely possible for deleteOne to not find a document to delete
+    if (_id !== null && _id !== undefined) { // it's entirely possible for deleteOne to not find a document to delete
       await handleRemove(defaultChannel, [_id as unknown as Stringable], options as RedisOptions, publishOptions);
     }
   }, { tags: ["redis"], includeId: true });
@@ -208,7 +208,7 @@ export function applyRedis<
     args: [, mutator, options],
     _id,
   }) => {
-    if (!_id) { // it's entirely possible for updateOne to not find a document to delete
+    if (_id === null || _id === undefined) { // it's entirely possible for updateOne to not find a document to delete
       return;
     }
     const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
@@ -232,7 +232,7 @@ export function applyRedis<
       return;
     }
     const _id = idFromMaybeResult(result);
-    if (!_id) {
+    if (_id === null || _id === undefined) {
       return;
     }
 
@@ -249,7 +249,7 @@ export function applyRedis<
     const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
 
     const _id = idFromMaybeResult(result);
-    if (!_id) {
+    if (_id === null || _id === undefined) {
       return;
     }
     await handleUpdate(defaultChannel, [_id], fields, options as RedisOptions || {}, publishOptions);
@@ -264,7 +264,7 @@ export function applyRedis<
     }
 
     const _id = idFromMaybeResult(result);
-    if (!_id) {
+    if (_id === null || _id === undefined) {
       return;
     }
     // debatable - we're going to consider a replacement to be a remove + insert, otherwise it's hard to know which fields changed
@@ -281,7 +281,7 @@ export function applyRedis<
     }
 
     const _id = idFromMaybeResult(result as WithId<TSchema> | UpdateResult<TSchema>);
-    if (!_id) {
+    if (_id === null || _id === undefined) {
       return;
     }
     // debatable - we're going to consider a replacement to be a remove + insert, otherwise it's hard to know which fields changed
