@@ -98,17 +98,17 @@ export class ObserveMultiplexer<
     return this._ordered ? ["addedBefore", "changed", "movedBefore", "removed"] : ["added", "changed", "removed"]
   }
 
-  #sendAdds = (handle: ObserveChangesObserver<ID, T>) => {
-    this.#cache.forEach((doc, _id) => {
+  #sendAdds = async (handle: ObserveChangesObserver<ID, T>) => {
+    await this.#cache.forEachAsync(async (doc, _id) => {
       if (!this.#handles.has(handle)) {
         throw Error("handle got removed before sending initial adds!");
       }
 
       if (this._ordered) {
-        handle.addedBefore(_id, doc, undefined);
+        await handle.addedBefore(_id, doc, undefined);
       }
       else {
-        handle.added(_id, doc);
+        await handle.added(_id, doc);
       }
     });
   }

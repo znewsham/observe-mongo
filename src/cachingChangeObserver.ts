@@ -37,6 +37,12 @@ export class CachingChangeObserverImpl<
     });
   }
 
+  async forEachAsync(iterator: (doc: T, id: ID) => void | Promise<void>): Promise<void> {
+    for (const [id, doc] of this.#docs) {
+      await iterator(doc, id);
+    }
+  }
+
   added(id: ID, doc: T): void {
     if (this.#docs.has(id)) {
       throw new Error("This document already exists");
