@@ -109,7 +109,7 @@ export function diffQueryUnorderedChanges<ID extends Stringable, T>(
 }
 
 
-export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
+export async function diffQueryOrderedChanges<T extends { _id: Stringable }> (
   oldResults: Array<T>,
   newResults: Array<T>,
   observer: ObserveChangesObserver<T["_id"], Omit<T, "_id">>,
@@ -118,7 +118,7 @@ export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
     clone = naiveClone,
     equals = naiveEquals
   }: DiffOptions = {}
-) {
+): Promise<void> {
   var projectionFn = projectionFn || clone;
 
   var newPresenceOfId = new Set<string>();
@@ -228,23 +228,30 @@ export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
   // an id of "null"
   unmoved.push(newResults.length);
 
-  oldResults.forEach(function (doc) {
-  if (!newPresenceOfId.has(stringId(doc._id)))
-    observer.observes("removed") && observer.removed && observer.removed(doc._id);
-  });
+  for (const doc of oldResults) {
+    if (!newPresenceOfId.has(stringId(doc._id))) {
+      if (observer.observes("removed") && observer.removed) {
+        await observer.removed(doc._id);
+      }
+    }
+  }
 
   // for each group of things in the new_results that is anchored by an unmoved
   // element, iterate through the things before it.
   let startOfGroup = 0;
-  unmoved.forEach(function (endOfGroup) {
+  for (const endOfGroup of unmoved) {
     const groupId = newResults[endOfGroup] ? newResults[endOfGroup]._id : undefined;
     let oldDoc, newDoc, fields, projectedNew, projectedOld;
     for (var i = startOfGroup; i < endOfGroup; i++) {
       newDoc = newResults[i];
       if (!oldIndexOfId.has(stringId(newDoc._id))) {
         fields = projectionFn(newDoc);
-        observer.observes("addedBefore") && observer.addedBefore(newDoc._id, fields, groupId);
-        observer.observes("added") && observer.added(newDoc._id, fields);
+        if (observer.observes("addedBefore")) {
+          await observer.addedBefore(newDoc._id, fields, groupId);
+        }
+        if (observer.observes("added")) {
+          await observer.added(newDoc._id, fields);
+        }
       }
       else {
         // moved
@@ -252,10 +259,12 @@ export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
         projectedNew = projectionFn(newDoc);
         projectedOld = projectionFn(oldDoc);
         const { hasChanges, changes: fields } = makeChangedFields(projectedOld, projectedNew, { equals });
-        if (hasChanges) {
-          observer.observes("changed") && observer.changed(newDoc._id, fields);
+        if (hasChanges && observer.observes("changed")) {
+          await observer.changed(newDoc._id, fields);
         }
-        observer.observes("movedBefore") && observer.movedBefore(newDoc._id, groupId);
+        if (observer.observes("movedBefore")) {
+          await observer.movedBefore(newDoc._id, groupId);
+        }
       }
     }
     if (newResults[endOfGroup]) {
@@ -264,12 +273,12 @@ export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
       projectedNew = projectionFn(newDoc);
       projectedOld = projectionFn(oldDoc);
       const { hasChanges, changes: fields } = makeChangedFields(projectedOld, projectedNew, { equals });
-      if (hasChanges) {
-        observer.observes("changed") && observer.changed(newDoc._id, fields);
+      if (hasChanges && observer.observes("changed")) {
+        await observer.changed(newDoc._id, fields);
       }
     }
     startOfGroup = endOfGroup + 1;
-  });
+  }
 };
 
 

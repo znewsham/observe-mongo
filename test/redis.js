@@ -1,5 +1,6 @@
 import { describe, it, mock } from "node:test";
 import assert from "node:assert";
+import { setTimeout } from "node:timers/promises";
 import { Minimongo } from "@blastjs/minimongo";
 import { LocalCollection } from "@blastjs/minimongo/dist/local_collection.js";
 import { FakeCollection } from "mongo-collection-helpers/testHelpers";
@@ -1232,6 +1233,46 @@ describe("Redis Observer", () => {
         1,
         "second insert should produce no new addedBefore — it sorts after the new tail and the limit is full"
       );
+    });
+
+    it("requery should await async addedBefore callbacks under real I/O latency (regression: TODO B)", async () => {
+      const { collection, multiplexer, subscriber } = await setup(
+        { value: { $lt: 10 } },
+        { sort: { number: 1 }, limit: 2 },
+        [
+          { _id: "1", number: 1, value: 5 },
+          { _id: "2", number: 2, value: 5 },
+          { _id: "3", number: 3, value: 5 }
+        ]
+      );
+
+      // Wrap findOne with a real timeout so the async addedBefore handler
+      // in #requery cannot complete in the same scheduler turn as the
+      // subscriber queue. Without diffQueryOrderedChanges awaiting the
+      // returned promise, subscriber._queue.flush() resolves before the
+      // multiplexer is notified about the new doc.
+      const originalFindOne = collection.findOne.bind(collection);
+      collection.findOne = async (...args) => {
+        await setTimeout(10);
+        return originalFindOne(...args);
+      };
+
+      const addedBeforeMock = mock.method(multiplexer, "addedBefore");
+      const removedMock = mock.method(multiplexer, "removed");
+
+      // Make _id "1" ineligible. With limit=2 and #sortDocs.size=2, the
+      // UPDATE handler routes through requery, which produces a synchronous
+      // removed("1") and an async addedBefore("3") (awaiting findOne).
+      await collection.updateOne({ _id: "1" }, { $set: { value: 100 } });
+      await subscriber._queue.flush();
+
+      assert.strictEqual(removedMock.mock.callCount(), 1, "removed should fire for _id '1'");
+      assert.strictEqual(
+        addedBeforeMock.mock.callCount(),
+        1,
+        "addedBefore should fire for _id '3' before flush returns"
+      );
+      assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[0], "3");
     });
 
     it("should clean up sortDocs in requery's removed callback", async () => {

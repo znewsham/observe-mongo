@@ -354,7 +354,7 @@ export class RedisObserverDriver<
     if (this.#stopped) {
       return;
     }
-    diffQueryOrderedChanges(
+    await diffQueryOrderedChanges(
       [...this.#sortDocs.keys()].map(id => ({ _id: id })),
       [...newDocs.keys()].map(id => ({ _id: id })),
       {
