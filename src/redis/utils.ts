@@ -5,10 +5,14 @@ import { Stringable } from "../types.js";
 
 enum OperationType {
   OID = "oid",
-  FILTER = "filter"
+  FILTER = "filter",
+  EMPTY = "empty"
 };
 function getType(id: (ObjectId | FilterOperators<Stringable>)): OperationType {
   const firstKey = Object.keys(id)[0];
+  if (firstKey === undefined) {
+    return OperationType.EMPTY;
+  }
   if (firstKey.startsWith("$")) {
     return OperationType.FILTER;
   }
@@ -22,7 +26,7 @@ export function extractIdsFromSelector<T extends { _id: Stringable }>(selector: 
     const andIds = selector.$and.map(extractIdsFromSelector);
     andIds.forEach(idSet => idSet.forEach(id => ids.add(id)));
   }
-  if (selector._id) {
+  if (selector._id !== null && selector._id !== undefined) {
     if (typeof selector._id === "string" || typeof selector._id === "number") {
       ids.add(selector._id);
     }
@@ -32,7 +36,10 @@ export function extractIdsFromSelector<T extends { _id: Stringable }>(selector: 
     else {
       const idField: ObjectId | FilterOperators<Stringable> = selector._id as ObjectId | FilterOperators<Stringable>;
       const type = getType(idField);
-      if (type === OperationType.FILTER) {
+      if (type === OperationType.EMPTY) {
+        // empty object {} — nothing to extract
+      }
+      else if (type === OperationType.FILTER) {
         const idFilter = idField as FilterOperators<Stringable>;
         // Skip null/undefined - stringId would crash trying to read `_bsontype` on them.
         idFilter.$in?.forEach(id => {
@@ -72,7 +79,7 @@ export function getStrategy<T extends { _id: Stringable }> (
       return Strategy.DEFAULT;
   }
 
-  if (selector && selector._id) {
+  if (selector && selector._id !== null && selector._id !== undefined) {
       return Strategy.DEDICATED_CHANNELS;
   }
 

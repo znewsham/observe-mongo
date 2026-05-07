@@ -7,3 +7,6 @@ import "./cachingChangeObserver.js";
 import "./orderedDict.js";
 import "./fromMeteor.js";
 import "./client.js";
+import "./types.js";
+import "./diff.js";
+import "./publish.js";

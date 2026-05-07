@@ -531,6 +531,59 @@ describe("Redis Observer", () => {
         "should only subscribe to channels for non-null, non-undefined ids"
       );
     });
+
+    it("should not throw when filter is _id: {} (regression: TODO 4)", () => {
+      // getStrategy picks DEDICATED_CHANNELS because selector._id is truthy.
+      // extractIdsFromSelector then calls getType({}); Object.keys({})[0] is
+      // undefined and undefined.startsWith("$") throws TypeError.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+
+      assert.doesNotThrow(() => {
+        new RedisObserverDriver(
+          collection.find({ _id: {} }, {}),
+          collection,
+          {
+            ordered: false,
+            manager: subscriptionManager,
+            Matcher: Minimongo.Matcher
+          }
+        );
+      });
+    });
+
+    // SKIPPED: regression test for TODO 1 (`strictRelevance` cannot be set to false).
+    // `#strictRelevance` is a private field that nothing reads — the assignment
+    // bug is real (`||` should be `??`) but has no externally observable effect
+    // until either (a) the documented behavior described on `RedisObserverDriverOptions.strictRelevance`
+    // is actually wired through to the projection/filter logic, or (b) the field
+    // is exposed via a public getter for testing. Add a real test once one of
+    // those happens.
+    it.skip("should respect strictRelevance: false (regression: TODO 1)", () => {});
+
+    it("should subscribe to a dedicated channel for literal _id: 0 (regression: TODO 6)", () => {
+      // Two truthy checks erase 0 as a legitimate _id:
+      //   - getStrategy: `if (selector && selector._id)` falls through to DEFAULT for _id: 0.
+      //   - extractIdsFromSelector: `if (selector._id)` skips the value entirely.
+      // Net effect: a doc with _id: 0 never gets a dedicated channel and no
+      // live updates are received for it.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+
+      const subscriber = new RedisObserverDriver(
+        collection.find({ _id: 0 }, {}),
+        collection,
+        {
+          ordered: false,
+          manager: subscriptionManager,
+          Matcher: Minimongo.Matcher
+        }
+      );
+
+      assert.deepStrictEqual(subscriber.channels, [`${collectionName}::0`]);
+    });
   });
   describe("limit sort processor", () => {
     // insert test cases

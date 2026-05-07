@@ -258,7 +258,7 @@ export function diffQueryOrderedChanges<T extends { _id: Stringable }> (
         observer.observes("movedBefore") && observer.movedBefore(newDoc._id, groupId);
       }
     }
-    if (groupId) {
+    if (newResults[endOfGroup]) {
       newDoc = newResults[endOfGroup];
       oldDoc = oldResults[oldIndex(stringId(newDoc._id))];
       projectedNew = projectionFn(newDoc);
