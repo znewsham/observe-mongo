@@ -309,6 +309,258 @@ describe("Redis Observer", () => {
       await subscriber._queue.flush();
       assert.strictEqual(addedMock.mock.callCount(), 1, "Should not have called added again");
     });
+    it("subscriber A (projection {name:1}) should not receive subscriber B's 'secret' in changed fields (regression: TODO G - cross-pollution)", async () => {
+      // Two subscribers on the same channel with disjoint projections.
+      //   A: projection { name: 1 }
+      //   B: projection { secret: 1 }
+      // Manager unions their completeProjections, so when an UPDATE comes in
+      // it fetches both `name` and `secret` from the DB and forwards a doc
+      // containing both fields to BOTH subscribers. If A's pipeline doesn't
+      // re-project, A's downstream observer would see `secret` in the
+      // changed-fields payload — which is a real correctness leak (and an
+      // information-disclosure leak if the field is sensitive).
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(
+        collectionName,
+        [{ _id: "1", name: "a", secret: "shh" }],
+        pubSubManager
+      );
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+
+      const changedA = mock.fn();
+      const handleA = {
+        observes: () => true,
+        added: () => {},
+        addedBefore: () => {},
+        changed: changedA,
+        movedBefore: () => {},
+        removed: () => {}
+      };
+
+      const cursorA = collection.find({}, { projection: { name: 1 } });
+      const multiplexerA = new ObserveMultiplexer({ ordered: false });
+      multiplexerA.addHandleAndSendInitialAdds(handleA);
+      const subscriberA = new RedisObserverDriver(cursorA, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriberA.init(multiplexerA);
+
+      const cursorB = collection.find({}, { projection: { secret: 1 } });
+      const multiplexerB = new ObserveMultiplexer({ ordered: false });
+      multiplexerB.addHandleAndSendInitialAdds({ observes: () => false });
+      const subscriberB = new RedisObserverDriver(cursorB, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriberB.init(multiplexerB);
+
+      // Update both name and secret in a single mutator.
+      await collection.updateOne({ _id: "1" }, { $set: { name: "b", secret: "shh2" } });
+      await subscriberA._queue.flush();
+      await multiplexerA.flush();
+
+      assert.ok(changedA.mock.callCount() > 0, "A should receive a changed callback");
+      for (const call of changedA.mock.calls) {
+        const fields = call.arguments[1];
+        assert.ok(
+          !("secret" in fields),
+          `A's changed payload should not include 'secret', got ${JSON.stringify(fields)}`
+        );
+      }
+    });
+
+    it("subscriber A (projection {name:1}) should not fire 'changed' when only B's 'secret' is updated (regression: TODO G - cross-pollution)", async () => {
+      // Same setup as the previous test, but the update touches ONLY a
+      // field outside A's projection. Even though the manager fetches
+      // `secret` (because of the union projection), A's projectionFn
+      // strips it, makeChangedFields finds no changes against A's cache,
+      // and A's `changed` callback should never fire.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(
+        collectionName,
+        [{ _id: "1", name: "a", secret: "shh" }],
+        pubSubManager
+      );
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+
+      const changedA = mock.fn();
+      const handleA = {
+        observes: () => true,
+        added: () => {},
+        addedBefore: () => {},
+        changed: changedA,
+        movedBefore: () => {},
+        removed: () => {}
+      };
+
+      const cursorA = collection.find({}, { projection: { name: 1 } });
+      const multiplexerA = new ObserveMultiplexer({ ordered: false });
+      multiplexerA.addHandleAndSendInitialAdds(handleA);
+      const subscriberA = new RedisObserverDriver(cursorA, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriberA.init(multiplexerA);
+
+      const cursorB = collection.find({}, { projection: { secret: 1 } });
+      const multiplexerB = new ObserveMultiplexer({ ordered: false });
+      multiplexerB.addHandleAndSendInitialAdds({ observes: () => false });
+      const subscriberB = new RedisObserverDriver(cursorB, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriberB.init(multiplexerB);
+
+      await collection.updateOne({ _id: "1" }, { $set: { secret: "shh2" } });
+      await subscriberA._queue.flush();
+      await multiplexerA.flush();
+
+      assert.strictEqual(
+        changedA.mock.callCount(),
+        0,
+        "A should not fire 'changed' when only B's 'secret' field was updated"
+      );
+    });
+
+    it("manager should shrink projection union when a subscriber detaches (regression: TODO G)", async () => {
+      // Two subscribers share a channel (default strategy → collection-name
+      // channel) but with disjoint projections + filters.
+      //   A: filter on `priority`, projection on `name`
+      //   B: filter on `category`, projection on `secret`
+      // SubscriptionManager.attach unions their completeProjections so
+      // findOne fetches every monitored field. SubscriptionManager.detach
+      // removes B from the subscribers set but does not shrink
+      // entry.projection — so even after B is gone, the manager still
+      // fetches B's fields on every UPDATE for the channel.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(
+        collectionName,
+        [{ _id: "1", name: "a", category: "X", priority: 3, secret: "shh" }],
+        pubSubManager
+      );
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+
+      const cursorA = collection.find({ priority: { $lt: 5 } }, { projection: { name: 1 } });
+      const multiplexerA = new ObserveMultiplexer({ ordered: false });
+      const subscriberA = new RedisObserverDriver(cursorA, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      multiplexerA.addHandleAndSendInitialAdds({ observes() { return false; } });
+      await subscriberA.init(multiplexerA);
+
+      const cursorB = collection.find({ category: "X" }, { projection: { secret: 1 } });
+      const multiplexerB = new ObserveMultiplexer({ ordered: false });
+      const subscriberB = new RedisObserverDriver(cursorB, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      multiplexerB.addHandleAndSendInitialAdds({ observes() { return false; } });
+      await subscriberB.init(multiplexerB);
+
+      // B is no longer interested.
+      subscriberB.stop();
+
+      const findOneSpy = mock.method(collection, "findOne");
+
+      await collection.updateOne({ _id: "1" }, { $set: { name: "b" } });
+      await subscriberA._queue.flush();
+
+      // Locate the manager's findOne call (it carries entry.projection,
+      // which is more than just `{ _id: 1 }` used by other call sites).
+      const managerCall = findOneSpy.mock.calls.find(
+        c => c.arguments[1]?.projection && Object.keys(c.arguments[1].projection).length > 1
+      );
+      assert.ok(managerCall, "expected the manager to call findOne with the channel's union projection");
+
+      const projection = managerCall.arguments[1].projection;
+      assert.ok(
+        !("secret" in projection),
+        `after subscriberB.stop() the channel projection should not include B's projected 'secret' field; got ${JSON.stringify(projection)}`
+      );
+      assert.ok(
+        !("category" in projection),
+        `after subscriberB.stop() the channel projection should not include B's filter 'category' field; got ${JSON.stringify(projection)}`
+      );
+    });
+
+    it("manager should not fetch on updates touching only a removed subscriber's fields (regression: TODO G)", async () => {
+      // Setup: A (projection {name:1}) and B (projection {secret:1}) on the
+      // same channel. After B.stop(), an UPDATE touching only `secret`
+      // should not result in a findOne against the DB — the channel no
+      // longer cares about that field. This requires two things to be true:
+      //   1. entry.projection shrinks on detach (no `secret` after B leaves).
+      //   2. The manager checks message[RedisPipe.FIELDS] against
+      //      entry.projection and skips findOne when there's no overlap.
+      // (#1 alone isn't enough: entry.projection would be {name} but the
+      //  manager still unconditionally fetches.)
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(
+        collectionName,
+        [{ _id: "1", name: "a", secret: "shh" }],
+        pubSubManager
+      );
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+
+      const cursorA = collection.find({}, { projection: { name: 1 } });
+      const multiplexerA = new ObserveMultiplexer({ ordered: false });
+      multiplexerA.addHandleAndSendInitialAdds({ observes: () => false });
+      const subscriberA = new RedisObserverDriver(cursorA, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriberA.init(multiplexerA);
+
+      const cursorB = collection.find({}, { projection: { secret: 1 } });
+      const multiplexerB = new ObserveMultiplexer({ ordered: false });
+      multiplexerB.addHandleAndSendInitialAdds({ observes: () => false });
+      const subscriberB = new RedisObserverDriver(cursorB, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriberB.init(multiplexerB);
+
+      subscriberB.stop();
+
+      const findOneSpy = mock.method(collection, "findOne");
+
+      // Touches only `secret`, which is no longer in any remaining
+      // subscriber's projection.
+      await collection.updateOne({ _id: "1" }, { $set: { secret: "shh2" } });
+      await subscriberA._queue.flush();
+
+      // CollectionThatEmits.updateOne issues its own findOne with
+      // `{ projection: { _id: 1 } }`; filter that out and look for any
+      // channel-level fetch (one that asks for `name` or `secret`).
+      const channelFindOnes = findOneSpy.mock.calls.filter(c => {
+        const proj = c.arguments[1]?.projection;
+        return proj && ("name" in proj || "secret" in proj);
+      });
+
+      assert.strictEqual(
+        channelFindOnes.length,
+        0,
+        `manager should skip findOne when message FIELDS don't intersect the (post-detach) entry.projection; got ${JSON.stringify(channelFindOnes.map(c => c.arguments[1].projection))}`
+      );
+    });
+
     it("should not fire removed for unknown ids (regression: TODO 11)", async () => {
       // The default-strategy REMOVE branch in #processDefaultMessage fires
       // multiplexer.removed unconditionally, unlike the UPDATE branch and
@@ -1315,5 +1567,169 @@ describe("Redis Observer", () => {
       );
     });
 
+  });
+
+  describe("manager FIELDS / projection intersection (regression: TODO G fetch filtering)", () => {
+    // These tests gate on a future change to SubscriptionManager.process:
+    // when an UPDATE message's RedisPipe.FIELDS doesn't overlap the
+    // channel's entry.projection (top-level), the manager should skip
+    // the findOne entirely.
+    //
+    // Cases marked "should fetch" are contract guards that already pass.
+    // Cases marked "should NOT fetch" are regression gates that fail on
+    // current code and will pass once the FIELDS-intersection check lands.
+    //
+    // Top-level normalization (`key.split(".")[0]`) on both projection
+    // keys and FIELDS makes the supported projection forms behave
+    // identically:
+    //   { a: 1 }          → top-level "a"
+    //   { "a.b": 1 }      → top-level "a"
+    //
+    // Note: MongoDB also accepts the nested-object form { a: { b: 1 } }
+    // as equivalent to { "a.b": 1 }, but Minimongo's _compileProjection
+    // rejects it with `Projection values should be one of 1, 0, true, or
+    // false`. Since this codebase passes user projections through
+    // _compileProjection during subscriber construction, the nested form
+    // never reaches the manager — there's no need to test it for
+    // FIELDS-intersection. See the dedicated test below that documents
+    // this restriction.
+
+    async function setupSingle(projection) {
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(
+        collectionName,
+        [{ _id: "1", a: { b: 1, c: 2 }, c: 3, name: "x" }],
+        pubSubManager
+      );
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const cursor = collection.find({}, { projection });
+      const multiplexer = new ObserveMultiplexer({ ordered: false });
+      multiplexer.addHandleAndSendInitialAdds({ observes: () => false });
+      const subscriber = new RedisObserverDriver(cursor, collection, {
+        ordered: false,
+        manager: subscriptionManager,
+        Matcher: Minimongo.Matcher,
+        compileProjection: LocalCollection._compileProjection
+      });
+      await subscriber.init(multiplexer);
+      return { pubSubManager, collection, subscriber };
+    }
+
+    async function emitUpdate(pubSubManager, fields) {
+      await pubSubManager.emit(collectionName, {
+        [RedisPipe.EVENT]: Events.UPDATE,
+        [RedisPipe.DOC]: { _id: "1" },
+        [RedisPipe.FIELDS]: fields,
+        [RedisPipe.UID]: "someone-else"
+      });
+    }
+
+    // The spy is attached after init, so all calls it sees come from
+    // SubscriptionManager.process (the only path that calls findOne with
+    // a projection in this setup).
+
+    it("projection { a: 1 } + FIELDS=['a'] should fetch", async () => {
+      const { pubSubManager, collection, subscriber } = await setupSingle({ a: 1 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["a"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 1, "FIELDS overlap projection at top-level — must fetch");
+    });
+
+    it("projection { a: 1 } + FIELDS=['c'] should NOT fetch", async () => {
+      const { pubSubManager, collection, subscriber } = await setupSingle({ a: 1 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["c"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 0, "no overlap — fetch must be skipped");
+    });
+
+    it("nested-object projection { a: { b: 1 } } is rejected by Minimongo (so the FIELDS-intersection check never sees this form)", async () => {
+      await assert.rejects(
+        () => setupSingle({ a: { b: 1 } }),
+        /Projection values should be one of 1, 0, true, or false/
+      );
+    });
+
+    it("projection { 'a.b': 1 } + FIELDS=['a'] should fetch", async () => {
+      const { pubSubManager, collection, subscriber } = await setupSingle({ "a.b": 1 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["a"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 1, "dotted projection: top-level 'a' overlaps — must fetch");
+    });
+
+    it("projection { 'a.b': 1 } + FIELDS=['c'] should NOT fetch", async () => {
+      const { pubSubManager, collection, subscriber } = await setupSingle({ "a.b": 1 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["c"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 0, "dotted projection: 'c' doesn't overlap 'a' — skip");
+    });
+
+    it("projection { 'a.b': 1 } + FIELDS=['a.b'] should fetch (defensive normalize)", async () => {
+      // FIELDS as produced by publish.ts is always top-level (split on ".").
+      // But if some other producer sends a dotted FIELDS entry, the
+      // intersection check should defensively normalize that too.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ "a.b": 1 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["a.b"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 1, "defensive: 'a.b' top-level normalizes to 'a' — must fetch");
+    });
+
+    it("projection { a: 0 } (exclusion) + FIELDS=['a'] should NOT fetch", async () => {
+      // Exclusion projection: subscriber explicitly does NOT want field `a`.
+      // An update touching only `a` is irrelevant — must skip.
+      // The semantics invert relative to inclusion: fetch iff FIELDS
+      // contains any key NOT in the excluded set.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ a: 0 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["a"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 0, "exclusion: 'a' was excluded — irrelevant change, skip");
+    });
+
+    it("projection { a: 0 } (exclusion) + FIELDS=['c'] should fetch", async () => {
+      // 'c' isn't in the excluded set, so the subscriber wants to see
+      // its updates. Must fetch.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ a: 0 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["c"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 1, "exclusion: 'c' isn't excluded — relevant change, fetch");
+    });
+
+    it("projection { _id: 1 } (only _id) + FIELDS=['c'] should NOT fetch", async () => {
+      // {_id: 1} is an inclusion projection that includes ONLY `_id`.
+      // No update to any other field is relevant to this subscriber.
+      // (Unlike `{}` which means "all fields", `{_id: 1}` means "only _id".)
+      const { pubSubManager, collection, subscriber } = await setupSingle({ _id: 1 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["c"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 0, "{_id: 1} includes only _id — no other-field update is relevant");
+    });
+
+    it("projection { _id: 0 } (exclude only _id) + FIELDS=['c'] should fetch", async () => {
+      // {_id: 0} is an exclusion projection that excludes ONLY _id.
+      // The subscriber wants every other field — must fetch on any
+      // non-_id update.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ _id: 0 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["c"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 1, "{_id: 0} excludes only _id — 'c' is wanted, must fetch");
+    });
+
+    it("projection {} (empty = all fields) + FIELDS=['c'] should fetch", async () => {
+      // Empty projection means "all fields" in Mongo semantics, so any
+      // update could be relevant — must always fetch.
+      const { pubSubManager, collection, subscriber } = await setupSingle({});
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["c"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(spy.mock.callCount(), 1, "empty projection means all fields — must always fetch");
+    });
   });
 });
