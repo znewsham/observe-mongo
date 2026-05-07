@@ -1722,6 +1722,54 @@ describe("Redis Observer", () => {
       assert.strictEqual(spy.mock.callCount(), 1, "{_id: 0} excludes only _id — 'c' is wanted, must fetch");
     });
 
+    it("projection { 'a.b.c': 0 } (deep exclusion) + FIELDS=['a'] should fetch", async () => {
+      // Deep-path exclusion only blocks `a.b.c` — the subscriber still
+      // wants the rest of `a` (e.g., a.b.d, a.x). An update touching the
+      // top-level `a` may have changed any of those, so we must fetch.
+      // Top-level normalization (k.split('.')[0]) is correct for inclusion
+      // but loses information for exclusion: only exact-top-level keys
+      // (no dot) actually exclude the whole top-level field.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ "a.b.c": 0 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["a"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(
+        spy.mock.callCount(),
+        1,
+        "deep exclusion: top-level 'a' may still be needed — must fetch"
+      );
+    });
+
+    it("projection { a: 0, 'b.c': 0 } + FIELDS=['a'] should NOT fetch", async () => {
+      // Companion to the FIELDS=['b'] case: 'a' has an exact-top-level
+      // exclusion, so the subscriber doesn't want anything under 'a'.
+      // An update touching only 'a' is irrelevant — skip the fetch.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ a: 0, "b.c": 0 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["a"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(
+        spy.mock.callCount(),
+        0,
+        "exact-top-level exclusion of 'a' covers the whole field — skip"
+      );
+    });
+
+    it("projection { a: 0, 'b.c': 0 } + FIELDS=['b'] should fetch", async () => {
+      // Mixed exact + dotted exclusion. 'a' is fully excluded; 'b' is only
+      // partially (only b.c blocked) so an update touching 'b' may have
+      // changed b.d, b.x, etc. — must fetch.
+      const { pubSubManager, collection, subscriber } = await setupSingle({ a: 0, "b.c": 0 });
+      const spy = mock.method(collection, "findOne");
+      await emitUpdate(pubSubManager, ["b"]);
+      await subscriber._queue.flush();
+      assert.strictEqual(
+        spy.mock.callCount(),
+        1,
+        "partial top-level exclusion: 'b' isn't fully excluded — must fetch"
+      );
+    });
+
     it("projection {} (empty = all fields) + FIELDS=['c'] should fetch", async () => {
       // Empty projection means "all fields" in Mongo semantics, so any
       // update could be relevant — must always fetch.

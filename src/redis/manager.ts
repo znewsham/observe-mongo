@@ -19,11 +19,16 @@ type SubscriptionEntry = {
 };
 
 // Decides whether an UPDATE message's changed FIELDS overlap a channel's
-// projection enough to warrant a findOne against the DB. Both sides are
-// normalized to top-level segments via key.split(".")[0] so { a: 1 } and
-// { "a.b": 1 } behave identically. For exclusion projections the logic is
-// inverted: we fetch iff at least one changed field is NOT in the excluded
-// set.
+// projection enough to warrant a findOne against the DB.
+//
+// Inclusion projections normalize to top-level segments via
+// key.split(".")[0] — { a: 1 } and { "a.b": 1 } both want something under
+// `a`, so an update touching `a` is relevant in either case.
+//
+// Exclusion projections are NOT symmetric. { a: 0 } excludes the whole
+// top-level field, but { "a.b": 0 } only excludes one path under `a` —
+// the subscriber still wants a.c, a.x, etc. So a top-level field is
+// "fully excluded" only when an exact (no-dot) exclusion key matches it.
 //
 // Special cases:
 //   {} — all fields, always fetch.
@@ -41,24 +46,26 @@ function shouldFetchForFields(
     return true;
   }
   const nonIdKeys = allKeys.filter(k => k !== "_id");
-  let isExclusion: boolean;
-  let projTopLevel: Set<string>;
+  const fieldsTopLevel = fields.map(f => f.split(".")[0]);
   if (nonIdKeys.length === 0) {
     // Only _id is mentioned. Inclusion form ({_id: 1}) means *only* _id
     // is wanted; exclusion form ({_id: 0}) means everything except _id.
     const idValue = projection._id;
-    isExclusion = idValue === 0 || idValue === false;
-    projTopLevel = isExclusion ? new Set(["_id"]) : new Set();
+    const isExclusion = idValue === 0 || idValue === false;
+    if (isExclusion) {
+      return fieldsTopLevel.some(f => f !== "_id");
+    }
+    return fieldsTopLevel.some(f => f === "_id");
   }
-  else {
-    const sampleValue = projection[nonIdKeys[0]];
-    isExclusion = sampleValue === 0 || sampleValue === false;
-    projTopLevel = new Set(nonIdKeys.map(k => k.split(".")[0]));
-  }
-  const fieldsTopLevel = fields.map(f => f.split(".")[0]);
+  const sampleValue = projection[nonIdKeys[0]];
+  const isExclusion = sampleValue === 0 || sampleValue === false;
   if (isExclusion) {
-    return fieldsTopLevel.some(f => !projTopLevel.has(f));
+    // Only exact-top-level (dotless) keys fully exclude a top-level field.
+    // Dotted exclusions leave the rest of the top-level reachable.
+    const fullyExcluded = new Set(nonIdKeys.filter(k => !k.includes(".")));
+    return fieldsTopLevel.some(f => !fullyExcluded.has(f));
   }
+  const projTopLevel = new Set(nonIdKeys.map(k => k.split(".")[0]));
   return fieldsTopLevel.some(f => projTopLevel.has(f));
 }
 
