@@ -287,6 +287,7 @@ export type CachingChangeObserverOptions = {
 
 export type CachingChangeObserver<ID extends Stringable, T extends StringObjectWithoutID> = ObserveChangesObserver<ID, T> & {
   forEach(iterator: (doc: T, id: ID) => void): void;
+  forEachAsync(iterator: (doc: T, id: ID) => void | Promise<void>): Promise<void>;
   indexOf(id: ID): number;
   size(): number;
   get(id: ID): T | undefined;

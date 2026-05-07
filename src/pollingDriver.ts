@@ -105,7 +105,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
       if (this.#stopped) {
         return;
       }
-      diffQueryOrderedChanges<T>(
+      await diffQueryOrderedChanges<T>(
         Array.from(docs).map(([_id, doc]) => ({ _id, ...doc }) as T),
         Array.from(newDocs.entries()).map(([_id, doc]) => ({ _id, ...doc }) as T),
         this.#multiplexer,
@@ -120,7 +120,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
       if (this.#stopped) {
         return;
       }
-      diffQueryUnorderedChanges<T["_id"], T>(
+      await diffQueryUnorderedChanges<T["_id"], T>(
         docs,
         newDocs as StringableIdMap<T["_id"], T>,
         this.#multiplexer,
