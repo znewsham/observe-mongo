@@ -96,6 +96,28 @@ describe("applyRedis", () => {
     );
   });
 
+  it("should omit FIELDS for a pipeline with $project", async () => {
+    // Inclusion-form $project names the retained fields, not every removed
+    // field. The affected field set is therefore not statically knowable.
+    const collection = makeMockCollection();
+    const emitMock = mock.fn(async () => {});
+    applyRedis(collection, { uid: "u", emit: emitMock });
+
+    const cb = collection.callbacks.get("after.updateOne.success");
+    await cb({
+      args: [{}, [{ $project: { kept: 1 } }], {}],
+      _id: "x"
+    });
+
+    assert.ok(emitMock.mock.callCount() > 0, "should still publish");
+    const message = emitMock.mock.calls[0].arguments[1];
+    assert.strictEqual(
+      message[RedisPipe.FIELDS],
+      undefined,
+      "FIELDS should be absent so subscribers re-fetch"
+    );
+  });
+
   it("should not crash when a mutator operand is null (regression: TODO 5)", async () => {
     // Defensive: an operator whose value is null (e.g., {$set: null}) used
     // to throw `Object.keys(null)` and propagate up the hook chain.
