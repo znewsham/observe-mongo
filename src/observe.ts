@@ -122,6 +122,11 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
         if (suppressed) {
           return;
         }
+        const addedAtIndex = indices
+          ? (before !== null && before !== undefined)
+            ? cache.indexOf(before)
+            : cache.size()
+          : -1;
         cache.addedBefore(id, { _id: id, ...fields }, before);
         if (!(observeCallbacks.addedAt || observeCallbacks.added)) {
           return;
@@ -129,16 +134,12 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
 
         const doc = transform(cloneIfMutating({ _id: id, ...fields }));
 
-        const beforeDoc = before && transform(cloneIfMutating(cache.get(before)));
+        const beforeDoc = (before !== null && before !== undefined) && transform(cloneIfMutating(cache.get(before)));
 
         if (observeCallbacks.addedAt) {
           return observeCallbacks.addedAt(
             doc,
-            indices
-              ? before
-                ? cache.indexOf(before)
-                : cache.size()
-              : -1,
+            addedAtIndex,
             beforeDoc
           );
         }
@@ -179,12 +180,12 @@ function observeChangesCallbacksFromObserveCallbacks<T extends { _id: Stringable
 
         const from = indices ? cache.indexOf(id) : -1;
         let to = indices
-          ? before
+          ? (before !== null && before !== undefined)
             ? cache.indexOf(before)
             : cache.size()
           : -1;
         cache.movedBefore(id, before);
-        const beforeDoc = before && transform(cloneIfMutating(cache.get(before)));
+        const beforeDoc = (before !== null && before !== undefined) && transform(cloneIfMutating(cache.get(before)));
 
         // When not moving backwards, adjust for the fact that removing the
         // document slides everything back one slot.

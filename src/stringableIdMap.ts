@@ -1,8 +1,19 @@
 import { Stringable, fromStringId, stringId } from "./types.js";
 
 export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, T> {
-  constructor(entries?: [ID, T][]) {
-    super(entries?.map(([key, value]) => [stringId(key), value]));
+  constructor(entries?: Iterable<readonly [ID, T]> | null) {
+    // the else is more correct, but 99.9% of the time we'll be passing in an array, and I don't want to risk changing behaviour to satisfy typescript
+    if (entries && Array.isArray(entries)) {
+      super((entries as [ID, T][])?.map(([key, value]) => [stringId(key), value]));
+    }
+    else {
+      super();
+      if (entries) {
+        for (const [key, value] of entries) {
+          super.set(stringId(key), value);
+        }
+      }
+    }
   }
 
   delete(key: ID | string): boolean {
@@ -20,10 +31,6 @@ export class StringableIdMap<ID extends Stringable, T> extends Map<ID | string, 
   set(key: ID | string, value: T): this {
     super.set(stringId(key), value);
     return this;
-  }
-
-  [Symbol.species]() {
-    return StringableIdMap;
   }
 
   keys(): MapIterator<ID | string> {

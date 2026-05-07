@@ -851,6 +851,43 @@ describe("Redis Observer", () => {
     // those happens.
     it.skip("should respect strictRelevance: false (regression: TODO 1)", () => {});
 
+    it("should subscribe to a dedicated channel for a Date _id (regression: TODO 11)", () => {
+      // getType(new Date()) returns EMPTY because Object.keys(date) is [],
+      // so the Date is silently dropped from extractIdsFromSelector and
+      // the subscriber registers no per-id channel.
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const date = new Date(0);
+      const subscriber = new RedisObserverDriver(
+        collection.find({ _id: date }, {}),
+        collection,
+        { ordered: false, manager: subscriptionManager, Matcher: Minimongo.Matcher }
+      );
+      assert.deepStrictEqual(
+        subscriber.channels,
+        [`${collectionName}::${stringId(date)}`],
+        "should produce a per-id channel keyed on the stringified Date"
+      );
+    });
+
+    it("should subscribe to a dedicated channel for a Date _id under $eq (regression: TODO 11)", () => {
+      const pubSubManager = new TestPubSubManager();
+      const collection = new CollectionThatEmits(collectionName, [], pubSubManager);
+      const subscriptionManager = new SubscriptionManager(pubSubManager);
+      const date = new Date(0);
+      const subscriber = new RedisObserverDriver(
+        collection.find({ _id: { $eq: date } }, {}),
+        collection,
+        { ordered: false, manager: subscriptionManager, Matcher: Minimongo.Matcher }
+      );
+      assert.deepStrictEqual(
+        subscriber.channels,
+        [`${collectionName}::${stringId(date)}`],
+        "should produce a per-id channel for { $eq: Date }"
+      );
+    });
+
     it("should subscribe to a dedicated channel for literal _id: 0 (regression: TODO 6)", () => {
       // Two truthy checks erase 0 as a legitimate _id:
       //   - getStrategy: `if (selector && selector._id)` falls through to DEFAULT for _id: 0.
@@ -875,6 +912,37 @@ describe("Redis Observer", () => {
     });
   });
   describe("limit sort processor", () => {
+    it("should not throw when requery runs with no filter (regression: TODO 4)", async () => {
+      // No filter → no matcher → #requery accessing this.#matcher._path
+      // would throw TypeError on the first cross-window insert with skip.
+      // The throw is swallowed by the queue's default error handler
+      // (console.warn), so the failure surfaces as a missing addedBefore.
+      const { collection, multiplexer, subscriber } = await setup(
+        undefined,
+        { sort: { number: 1 }, skip: 1 },
+        [{ _id: "1", number: 1 }]
+      );
+      const addedBeforeMock = mock.method(multiplexer, "addedBefore");
+      await collection.insertOne({ _id: "2", number: 0 });
+      await subscriber._queue.flush();
+      assert.strictEqual(
+        addedBeforeMock.mock.callCount(),
+        1,
+        "should have called addedBefore for the doc that became visible after skip"
+      );
+    });
+    it("should accept array-form sort and produce a sort projection by field name (regression: TODO 3)", async () => {
+      const { subscriber } = await setup(
+        {},
+        { sort: [["number", 1]], projection: { thing: 1 } },
+        [{ _id: "1", number: 1, thing: "a" }]
+      );
+      assert.deepStrictEqual(
+        subscriber.completeProjection,
+        { thing: 1, number: 1 },
+        "completeProjection should be keyed by field name, not array index"
+      );
+    });
     // insert test cases
     it("should call addedBefore when inserting a document AFTER the set, without a limit", async () => {
       const {
