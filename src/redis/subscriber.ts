@@ -76,8 +76,6 @@ export class RedisObserverDriver<
   #sortProjectionFn: (projection: Document) => SortT;
   #transform: (doc: any) => ET;
 
-  // down the road, we might merge sortDocs and docs - currently docs is totally unused and we rely on the multiplexer to track the current document
-  #docs: OrderedDict<T["_id"], SortT & T> | undefined;
   // #sortDocs contains the document ID + the fields necessary to evaluate the sort.
   #sortDocs: OrderedDict<T["_id"], SortT> | undefined;
   #strictRelevance: boolean;
@@ -221,9 +219,6 @@ export class RedisObserverDriver<
   }
 
   async #has(id: Stringable): Promise<boolean> {
-    if (this.#docs) {
-      return this.#docs.has(id);
-    }
     if (this.#multiplexer) {
       return this.#multiplexer.has(id);
     }
@@ -231,14 +226,6 @@ export class RedisObserverDriver<
   }
 
   async #get(id: Stringable): Promise<ET | undefined> {
-    if (this.#docs) {
-      const doc = this.#docs.get(id);
-      if (!doc) {
-        return;
-      }
-      const { _id, ...docMinusId } = this.#projectionFn(doc);
-      return docMinusId as unknown as ET;
-    }
     if (this.#multiplexer) {
       const multiDoc = await this.#multiplexer.get(id);
       if (!multiDoc) {
@@ -261,9 +248,6 @@ export class RedisObserverDriver<
     return this.#transform(rest);
   }
   async #size(): Promise<number> {
-    if (this.#docs) {
-      return this.#docs.size;
-    }
     if (!this.#multiplexer) {
       throw new Error("Neither docs nor multiplexer");
     }
