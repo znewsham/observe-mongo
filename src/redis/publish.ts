@@ -58,10 +58,62 @@ export async function handleRemove(
   }
 }
 
+// Returns the union of top-level field names affected by `mutator`, or
+// `undefined` if the affected set is not statically knowable (replacement
+// updates and pipelines containing $replaceRoot/$replaceWith). Subscribers
+// treat absent FIELDS as "always fetch".
+export function topLevelFieldsFromMutator(mutator: unknown): string[] | undefined {
+  if (mutator == null || typeof mutator !== "object") return undefined;
+
+  if (Array.isArray(mutator)) {
+    const fields = new Set<string>();
+    for (const stage of mutator) {
+      if (!stage || typeof stage !== "object" || Array.isArray(stage)) continue;
+      for (const [op, operand] of Object.entries(stage)) {
+        if (op === "$replaceRoot" || op === "$replaceWith") return undefined;
+        if (op === "$unset") {
+          if (typeof operand === "string") {
+            fields.add(operand.split(".")[0]);
+          }
+          else if (Array.isArray(operand)) {
+            for (const path of operand) {
+              if (typeof path === "string") fields.add(path.split(".")[0]);
+            }
+          }
+          continue;
+        }
+        if (op === "$set" || op === "$addFields" || op === "$project") {
+          if (operand && typeof operand === "object" && !Array.isArray(operand)) {
+            for (const key of Object.keys(operand)) fields.add(key.split(".")[0]);
+          }
+          continue;
+        }
+        // Unknown stage — be safe. If we ever hit this with a collection that still uses the old redis-oplog code, we'll have a problem
+        // this is OK - it's currently not used and we have no immediate plans to use it
+        return undefined;
+      }
+    }
+    return [...fields];
+  }
+
+  const entries = Object.entries(mutator);
+  if (entries.length === 0) return [];
+  // Replacement form: any non-$ top-level key means the whole doc is being
+  // replaced with that object, and removed fields aren't enumerable.
+  if (entries.some(([k]) => !k.startsWith("$"))) return undefined;
+
+  const fields = new Set<string>();
+  for (const [, operand] of entries) {
+    if (!operand || typeof operand !== "object" || Array.isArray(operand)) continue;
+    for (const key of Object.keys(operand)) fields.add(key.split(".")[0]);
+  }
+  return [...fields];
+}
+
 export async function handleUpdate(
   defaultChannel: string,
   _ids: Stringable[],
-  fields: string[],
+  fields: string[] | undefined,
   options: RedisOptions,
   publishOptions: PublishOptions
 ) {
@@ -72,10 +124,12 @@ export async function handleUpdate(
         const event: RedisUpdate<{ _id: Stringable }> = {
           [RedisPipe.EVENT]: Events.UPDATE,
           [RedisPipe.DOC]: { _id },
-          // @ts-expect-error we're going to trust that fields is the top level keys
-          [RedisPipe.FIELDS]: fields,
           [RedisPipe.UID]: publishOptions.uid
         };
+        if (fields !== undefined) {
+          // @ts-expect-error we're going to trust that fields is the top level keys
+          event[RedisPipe.FIELDS] = fields;
+        }
         try {
           await publishOptions.emit(channel, event, options);
         }
@@ -211,7 +265,7 @@ export function applyRedis<
     if (_id === null || _id === undefined) { // it's entirely possible for updateOne to not find a document to delete
       return;
     }
-    const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
+    const fields = topLevelFieldsFromMutator(mutator);
     await handleUpdate(defaultChannel, [_id as unknown as Stringable], fields, options as RedisOptions || {}, publishOptions);
   }, { tags: ["redis"], includeId: true });
 
@@ -219,7 +273,7 @@ export function applyRedis<
     args: [, mutator, options],
     _ids
   }) => {
-    const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
+    const fields = topLevelFieldsFromMutator(mutator);
     // TODO: what about partial deletion?
     await handleUpdate(defaultChannel, _ids as unknown as Stringable[], fields, options as RedisOptions || {}, publishOptions);
   }, { tags: ["redis"], includeIds: true });
@@ -246,7 +300,7 @@ export function applyRedis<
     if (!result) { // it's entirely possible for updateOne to not find a document to delete
       return;
     }
-    const fields = Array.from(new Set(Object.values(mutator).flatMap($mutator => Object.keys($mutator).map(key => key.split(".")[0]))));
+    const fields = topLevelFieldsFromMutator(mutator);
 
     const _id = idFromMaybeResult(result);
     if (_id === null || _id === undefined) {
