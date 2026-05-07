@@ -120,7 +120,7 @@ export class PollingDriver<T extends { _id: Stringable }> implements ObserveDriv
       if (this.#stopped) {
         return;
       }
-      diffQueryUnorderedChanges<T["_id"], T>(
+      await diffQueryUnorderedChanges<T["_id"], T>(
         docs,
         newDocs as StringableIdMap<T["_id"], T>,
         this.#multiplexer,

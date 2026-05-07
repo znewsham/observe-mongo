@@ -1,7 +1,42 @@
 import { describe, it, mock } from "node:test";
 import assert from "node:assert";
 import { setTimeout } from "node:timers/promises";
-import { diffQueryOrderedChanges } from "../lib/diff.js";
+import { diffQueryOrderedChanges, diffQueryUnorderedChanges } from "../lib/diff.js";
+import { StringableIdMap } from "../lib/stringableIdMap.js";
+
+describe("diffQueryUnorderedChanges", () => {
+  it("should await async observer hooks (regression: TODO C)", async () => {
+    // Same shape as TODO B, on the unordered diff. forEach over the
+    // StringableIdMap discarded the promises returned by observer hooks
+    // so any async caller (current callers happen to be sync via the
+    // multiplexer queue, but external callers and a future async
+    // multiplexer would silently race).
+    let callbackCompleted = false;
+    const oldResults = new StringableIdMap();
+    oldResults.set("1", { value: "a" });
+    const newResults = new StringableIdMap();
+    newResults.set("1", { value: "a" });
+    newResults.set("2", { value: "b" });
+
+    await diffQueryUnorderedChanges(oldResults, newResults, {
+      observes: (h) => h === "added",
+      added: async () => {
+        await setTimeout(10);
+        callbackCompleted = true;
+      },
+      addedBefore: () => {},
+      changed: () => {},
+      movedBefore: () => {},
+      removed: () => {}
+    });
+
+    assert.strictEqual(
+      callbackCompleted,
+      true,
+      "diffQueryUnorderedChanges must await async observer hooks before resolving"
+    );
+  });
+});
 
 describe("diffQueryOrderedChanges", () => {
   it("should await async observer hooks (regression: TODO B)", async () => {

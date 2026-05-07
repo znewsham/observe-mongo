@@ -66,7 +66,7 @@ type DiffOptions = {
   projectionFn?: <T>(doc: T) => any
 }
 
-export function diffQueryUnorderedChanges<ID extends Stringable, T>(
+export async function diffQueryUnorderedChanges<ID extends Stringable, T>(
   oldResults: StringableIdMap<ID, T>,
   newResults: StringableIdMap<ID, T>,
   observer: ObserveChangesObserver<ID, T>,
@@ -75,13 +75,13 @@ export function diffQueryUnorderedChanges<ID extends Stringable, T>(
     clone = naiveClone,
     equals = naiveEquals
   }: DiffOptions = {}
-) {
+): Promise<void> {
   if (observer.observes("added") || observer.observes("changed")) {
-    newResults.forEach((value, id) => {
+    for (const [id, value] of newResults) {
       const oldDoc = oldResults.get(id);
       if (!oldDoc) {
         if (observer.observes("added") && observer.added) {
-          observer.added(id, value);
+          await observer.added(id, value);
         }
       }
       else {
@@ -91,20 +91,20 @@ export function diffQueryUnorderedChanges<ID extends Stringable, T>(
           const projectedOld = projectionFn(oldDoc);
           var { hasChanges, changes: changedFields } = makeChangedFields(projectedOld, projectedNew, { equals });
           if (hasChanges) {
-            observer.changed(id, changedFields);
+            await observer.changed(id, changedFields);
           }
         }
       }
-    });
+    }
   }
   if (observer.observes("removed") && observer.removed) {
-    oldResults.forEach((value, id) => {
+    for (const [id] of oldResults) {
       if (!newResults.get(id)) {
         if (observer.removed) {
-          observer.removed(id);
+          await observer.removed(id);
         }
       }
-    });
+    }
   }
 }
 
