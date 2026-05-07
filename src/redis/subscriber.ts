@@ -120,8 +120,12 @@ export class RedisObserverDriver<
     this.#channels = this.#getChannels(channelsFromOptions);
     this.#strictRelevance = options.strictRelevance || true;
     if (this.#cursor.cursorDescription.options.sort) {
-      this.#comparator = new options.Sorter(this.#cursor.cursorDescription.options.sort).getComparator();
-      this.#sortProjection = Object.fromEntries(Object.entries(this.#cursor.cursorDescription.options.sort).map(([key]) => [key, 1])) as NestedProjectionOfTSchema<SortT>
+      const rawSort = this.#cursor.cursorDescription.options.sort;
+      const sortObject = Array.isArray(rawSort)
+        ? Object.fromEntries(rawSort)
+        : rawSort;
+      this.#comparator = new options.Sorter(sortObject).getComparator();
+      this.#sortProjection = Object.fromEntries(Object.keys(sortObject).map((key) => [key, 1])) as NestedProjectionOfTSchema<SortT>
       // @ts-expect-error
       this.#sortProjectionFn = options.compileProjection(this.#sortProjection) as (doc: T & SortT & FilterT) => SortT;
       this.#combinedProjection = unionOfProjections<T & SortT>([
@@ -369,7 +373,7 @@ export class RedisObserverDriver<
             {
               projection: unionOfProjections([
                 this.#cursor.cursorDescription.options.projection as NestedProjectionOfTSchema<T>,
-                Object.fromEntries(Object.entries(this.#cursor.cursorDescription.options.sort || {}).map(([key]) => [key, 1])) as NestedProjectionOfTSchema<T>,
+                (this.#sortProjection || {}) as NestedProjectionOfTSchema<T>,
                 this.#matcher._path
               ])
             }

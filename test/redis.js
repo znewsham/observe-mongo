@@ -875,6 +875,18 @@ describe("Redis Observer", () => {
     });
   });
   describe("limit sort processor", () => {
+    it("should accept array-form sort and produce a sort projection by field name (regression: TODO 3)", async () => {
+      const { subscriber } = await setup(
+        {},
+        { sort: [["number", 1]], projection: { thing: 1 } },
+        [{ _id: "1", number: 1, thing: "a" }]
+      );
+      assert.deepStrictEqual(
+        subscriber.completeProjection,
+        { thing: 1, number: 1 },
+        "completeProjection should be keyed by field name, not array index"
+      );
+    });
     // insert test cases
     it("should call addedBefore when inserting a document AFTER the set, without a limit", async () => {
       const {
