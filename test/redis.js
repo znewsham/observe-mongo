@@ -1057,5 +1057,45 @@ describe("Redis Observer", () => {
       assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[1].name, "one", "should include non-sort fields in the document");
     });
 
+    it("should clean up sortDocs in requery's removed callback", async () => {
+      const {
+        collection,
+        multiplexer,
+        subscriber
+      } = await setup(
+        { value: { $lt: 10 } },
+        { sort: { number: 1 }, limit: 2 },
+        [
+          { _id: "1", number: 1, value: 5 },
+          { _id: "2", number: 2, value: 5 },
+          { _id: "3", number: 3, value: 5 }
+        ]
+      );
+
+      // Make _id "1" ineligible. With limit=2 and #sortDocs.size=2, this hits
+      // the requery branch in #processLimitSortMessage. The requery's `removed`
+      // callback fires for "1"; the buggy code passed the stored value to
+      // OrderedDict.remove() instead of the id, so the entry under "1" was
+      // never removed and "1" leaked as the head of #sortDocs.
+      await collection.updateOne({ _id: "1" }, { $set: { value: 100 } });
+      await subscriber._queue.flush();
+
+      // Insert a doc that sorts before the new head. With a clean #sortDocs
+      // the head is "2", so addedBefore is called with before="2". With the
+      // leak the head is the stale "1", so addedBefore is called with
+      // before="1" — which the multiplexer no longer knows about.
+      const addedBeforeMock = mock.method(multiplexer, "addedBefore");
+      await collection.insertOne({ _id: "0", number: 0, value: 5 });
+      await subscriber._queue.flush();
+
+      assert.strictEqual(addedBeforeMock.mock.callCount(), 1, "should have called addedBefore once for the new doc");
+      assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[0], "0");
+      assert.strictEqual(
+        addedBeforeMock.mock.calls[0].arguments[2],
+        "2",
+        "addedBefore should reference the new head '2', not the stale '1'"
+      );
+    });
+
   });
 });

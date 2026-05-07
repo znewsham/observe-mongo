@@ -384,7 +384,7 @@ export class RedisObserverDriver<
           if (!item) {
             return;
           }
-          this.#sortDocs?.remove(item);
+          this.#sortDocs?.remove(item._id);
           this.#multiplexer?.removed(item._id);
         },
 
