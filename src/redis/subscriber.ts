@@ -481,7 +481,7 @@ export class RedisObserverDriver<
       if (options.limit && this.#sortDocs.size > options.limit) {
         if (this.#sortDocs.tail) {
           const tail = this.#sortDocs.tail;
-          this.#sortDocs.remove(tail.value);
+          this.#sortDocs.remove(tail.key);
           this.#multiplexer.removed(tail.value._id);
         }
       }
