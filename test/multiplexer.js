@@ -38,6 +38,48 @@ class NoopDriver extends PollingDriver {
 
 
 describe("multiplexer", () => {
+  it("addHandleAndSendInitialAdds should await async handle callbacks (regression: TODO A)", async () => {
+    // The cache is empty for the first handle, so the bug only manifests
+    // when a SECOND handle attaches to a multiplexer with existing docs.
+    // #sendAdds previously called handle.added without awaiting, so
+    // addHandleAndSendInitialAdds would resolve before the user's async
+    // callback completed.
+    const multiplexer = new ObserveMultiplexer({ ordered: false });
+
+    // First handle to populate the cache.
+    const noopHandle = {
+      observes: () => true,
+      added: () => {},
+      addedBefore: () => {},
+      changed: () => {},
+      movedBefore: () => {},
+      removed: () => {}
+    };
+    multiplexer.addHandleAndSendInitialAdds(noopHandle);
+    multiplexer.added("a", { value: 1 });
+    multiplexer.ready();
+    await multiplexer.flush();
+
+    let resolved = false;
+    const slowHandle = {
+      observes: () => true,
+      added: async () => {
+        await setTimeout(10);
+        resolved = true;
+      },
+      addedBefore: async () => {},
+      changed: async () => {},
+      movedBefore: async () => {},
+      removed: async () => {}
+    };
+    await multiplexer.addHandleAndSendInitialAdds(slowHandle);
+
+    assert.strictEqual(
+      resolved,
+      true,
+      "addHandleAndSendInitialAdds should not resolve until handle.added completes"
+    );
+  });
   it("should add the initial items to the first handle", async () => {
     const collection = new FakeCollection([{ _id: "test" }, { _id: "test2" }]);
     const cursor = collection.find({});

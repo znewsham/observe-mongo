@@ -20,7 +20,7 @@ export type RedisInsert<T extends { _id: Stringable }> = {
 export type RedisUpdate<T extends { _id: Stringable }> = {
   [RedisPipe.EVENT]: typeof Events.UPDATE,
   [RedisPipe.DOC]: T,
-  [RedisPipe.FIELDS]: (keyof T & string)[],
+  [RedisPipe.FIELDS]?: (keyof T & string)[],
   [RedisPipe.UID]: Stringable
 }
 

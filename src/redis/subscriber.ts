@@ -76,8 +76,6 @@ export class RedisObserverDriver<
   #sortProjectionFn: (projection: Document) => SortT;
   #transform: (doc: any) => ET;
 
-  // down the road, we might merge sortDocs and docs - currently docs is totally unused and we rely on the multiplexer to track the current document
-  #docs: OrderedDict<T["_id"], SortT & T> | undefined;
   // #sortDocs contains the document ID + the fields necessary to evaluate the sort.
   #sortDocs: OrderedDict<T["_id"], SortT> | undefined;
   #strictRelevance: boolean;
@@ -120,8 +118,12 @@ export class RedisObserverDriver<
     this.#channels = this.#getChannels(channelsFromOptions);
     this.#strictRelevance = options.strictRelevance || true;
     if (this.#cursor.cursorDescription.options.sort) {
-      this.#comparator = new options.Sorter(this.#cursor.cursorDescription.options.sort).getComparator();
-      this.#sortProjection = Object.fromEntries(Object.entries(this.#cursor.cursorDescription.options.sort).map(([key]) => [key, 1])) as NestedProjectionOfTSchema<SortT>
+      const rawSort = this.#cursor.cursorDescription.options.sort;
+      const sortObject = Array.isArray(rawSort)
+        ? Object.fromEntries(rawSort)
+        : rawSort;
+      this.#comparator = new options.Sorter(sortObject).getComparator();
+      this.#sortProjection = Object.fromEntries(Object.keys(sortObject).map((key) => [key, 1])) as NestedProjectionOfTSchema<SortT>
       // @ts-expect-error
       this.#sortProjectionFn = options.compileProjection(this.#sortProjection) as (doc: T & SortT & FilterT) => SortT;
       this.#combinedProjection = unionOfProjections<T & SortT>([
@@ -217,9 +219,6 @@ export class RedisObserverDriver<
   }
 
   async #has(id: Stringable): Promise<boolean> {
-    if (this.#docs) {
-      return this.#docs.has(id);
-    }
     if (this.#multiplexer) {
       return this.#multiplexer.has(id);
     }
@@ -227,14 +226,6 @@ export class RedisObserverDriver<
   }
 
   async #get(id: Stringable): Promise<ET | undefined> {
-    if (this.#docs) {
-      const doc = this.#docs.get(id);
-      if (!doc) {
-        return;
-      }
-      const { _id, ...docMinusId } = this.#projectionFn(doc);
-      return docMinusId as unknown as ET;
-    }
     if (this.#multiplexer) {
       const multiDoc = await this.#multiplexer.get(id);
       if (!multiDoc) {
@@ -257,9 +248,6 @@ export class RedisObserverDriver<
     return this.#transform(rest);
   }
   async #size(): Promise<number> {
-    if (this.#docs) {
-      return this.#docs.size;
-    }
     if (!this.#multiplexer) {
       throw new Error("Neither docs nor multiplexer");
     }
@@ -324,7 +312,12 @@ export class RedisObserverDriver<
     }
     else if (message[RedisPipe.EVENT] === Events.REMOVE) {
       const doc = message[RedisPipe.DOC];
-      this.#multiplexer.removed(doc._id);
+      if (await this.#has(doc._id)) {
+        if (this.#stopped) {
+          return;
+        }
+        this.#multiplexer.removed(doc._id);
+      }
       return;
     }
     throw new Error("not implemented");
@@ -349,7 +342,7 @@ export class RedisObserverDriver<
     if (this.#stopped) {
       return;
     }
-    diffQueryOrderedChanges(
+    await diffQueryOrderedChanges(
       [...this.#sortDocs.keys()].map(id => ({ _id: id })),
       [...newDocs.keys()].map(id => ({ _id: id })),
       {
@@ -361,13 +354,7 @@ export class RedisObserverDriver<
           const actualDoc = id === newCommer._id ? newCommer as T & SortT : await this.#collection.findOne(
             // @ts-expect-error
             { _id: id },
-            {
-              projection: unionOfProjections([
-                this.#cursor.cursorDescription.options.projection as NestedProjectionOfTSchema<T>,
-                Object.fromEntries(Object.entries(this.#cursor.cursorDescription.options.sort || {}).map(([key]) => [key, 1])) as NestedProjectionOfTSchema<T>,
-                this.#matcher._path
-              ])
-            }
+            { projection: this.completeProjection }
           ) as T & SortT;
           if (!actualDoc) {
             return;
@@ -384,7 +371,7 @@ export class RedisObserverDriver<
           if (!item) {
             return;
           }
-          this.#sortDocs?.remove(item);
+          this.#sortDocs?.remove(item._id);
           this.#multiplexer?.removed(item._id);
         },
 
@@ -442,7 +429,7 @@ export class RedisObserverDriver<
 
         if (options.limit && this.#sortDocs.size > options.limit && this.#sortDocs.tail) {
           const tail = this.#sortDocs.tail;
-          this.#sortDocs.remove(this.#sortDocs.tail.value);
+          this.#sortDocs.remove(tail.key);
           this.#multiplexer.removed(tail.value._id);
         }
       }
@@ -476,12 +463,12 @@ export class RedisObserverDriver<
       const allDocs = [sortableDoc, ...this.#sortDocs.values()].sort(this.#comparator);
       const index = allDocs.indexOf(sortableDoc);
       const before = allDocs[index + 1];
-      this.#sortDocs.add(this.#sortProjectionFn(doc), before);
+      this.#sortDocs.add(doc._id, this.#sortProjectionFn(doc), before?._id);
       this.#multiplexer.addedBefore(doc._id, this.#projectionFnWithMapWithoutId(doc), before?._id);
       if (options.limit && this.#sortDocs.size > options.limit) {
         if (this.#sortDocs.tail) {
           const tail = this.#sortDocs.tail;
-          this.#sortDocs.remove(tail.value);
+          this.#sortDocs.remove(tail.key);
           this.#multiplexer.removed(tail.value._id);
         }
       }
@@ -552,7 +539,7 @@ export class RedisObserverDriver<
             const afterSortIndex = allDocs.findIndex(({ _id }) => _id === doc._id);
             const afterSortBefore = allDocs[afterSortIndex + 1];
             if (beforeSortIndex !== afterSortIndex) {
-              this.#multiplexer.movedBefore(doc._id, afterSortBefore);
+              this.#multiplexer.movedBefore(doc._id, afterSortBefore?._id);
             }
           }
         }

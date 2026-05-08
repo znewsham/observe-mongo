@@ -18,6 +18,57 @@ type SubscriptionEntry = {
   handle: (message: RedisMessage) => void
 };
 
+// Decides whether an UPDATE message's changed FIELDS overlap a channel's
+// projection enough to warrant a findOne against the DB.
+//
+// Inclusion projections normalize to top-level segments via
+// key.split(".")[0] — { a: 1 } and { "a.b": 1 } both want something under
+// `a`, so an update touching `a` is relevant in either case.
+//
+// Exclusion projections are NOT symmetric. { a: 0 } excludes the whole
+// top-level field, but { "a.b": 0 } only excludes one path under `a` —
+// the subscriber still wants a.c, a.x, etc. So a top-level field is
+// "fully excluded" only when an exact (no-dot) exclusion key matches it.
+//
+// Special cases:
+//   {} — all fields, always fetch.
+//   {_id: 1} — only _id, never fetch on a non-_id UPDATE.
+//   {_id: 0} — exclude only _id, always fetch on any non-_id UPDATE.
+function shouldFetchForFields(
+  projection: Document,
+  fields: string[] | undefined
+): boolean {
+  if (!fields) {
+    return true;
+  }
+  const allKeys = Object.keys(projection);
+  if (allKeys.length === 0) {
+    return true;
+  }
+  const nonIdKeys = allKeys.filter(k => k !== "_id");
+  const fieldsTopLevel = fields.map(f => f.split(".")[0]);
+  if (nonIdKeys.length === 0) {
+    // Only _id is mentioned. Inclusion form ({_id: 1}) means *only* _id
+    // is wanted; exclusion form ({_id: 0}) means everything except _id.
+    const idValue = projection._id;
+    const isExclusion = idValue === 0 || idValue === false;
+    if (isExclusion) {
+      return fieldsTopLevel.some(f => f !== "_id");
+    }
+    return fieldsTopLevel.some(f => f === "_id");
+  }
+  const sampleValue = projection[nonIdKeys[0]];
+  const isExclusion = sampleValue === 0 || sampleValue === false;
+  if (isExclusion) {
+    // Only exact-top-level (dotless) keys fully exclude a top-level field.
+    // Dotted exclusions leave the rest of the top-level reachable.
+    const fullyExcluded = new Set(nonIdKeys.filter(k => !k.includes(".")));
+    return fieldsTopLevel.some(f => !fullyExcluded.has(f));
+  }
+  const projTopLevel = new Set(nonIdKeys.map(k => k.split(".")[0]));
+  return fieldsTopLevel.some(f => projTopLevel.has(f));
+}
+
 export class SubscriptionManager {
   #subscribers = new Map<string, SubscriptionEntry>();
   #pubSubManager: PubSubManager;
@@ -71,6 +122,11 @@ export class SubscriptionManager {
         this.#subscribers.delete(channel);
         this.#pubSubManager.unsubscribe(channel, entry.handle);
       }
+      else {
+        entry.projection = unionOfProjections(
+          [...entry.subscribers].map(s => s.completeProjection)
+        );
+      }
     });
   }
 
@@ -100,7 +156,13 @@ export class SubscriptionManager {
     };
     const collection: Collection<T> = entry.collection as Collection<T>;
 
-    // TODO: we should check if the fields intersect with the completeProjection
+    if (message[RedisPipe.EVENT] === Events.UPDATE) {
+      const fields = message[RedisPipe.FIELDS] as string[] | undefined;
+      if (!shouldFetchForFields(entry.projection, fields)) {
+        return;
+      }
+    }
+
     const doc = message[RedisPipe.EVENT] === Events.REMOVE
       ? message[RedisPipe.DOC]
       : await collection.findOne<T>(selector, { projection: entry.projection });
