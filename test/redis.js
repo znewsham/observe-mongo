@@ -7,6 +7,7 @@ import { ObserveMultiplexer } from "../lib/multiplexer.js";
 import { SubscriptionManager } from "../lib/redis/manager.js";
 import { RedisObserverDriver } from "../lib/redis/subscriber.js";
 import { Events, RedisPipe } from "../lib/redis/constants.js";
+import { canUseRedisOplog } from "../lib/redis/index.js";
 import { stringId } from "../lib/types.js";
 
 const collectionName = "redisServerTests";
@@ -1035,5 +1036,77 @@ describe("Redis Observer", () => {
       assert.strictEqual(addedBeforeMock.mock.calls[0].arguments[1].name, "one", "should include non-sort fields in the document");
     });
 
+  });
+});
+
+describe("canUseRedisOplog", () => {
+  const baseOptions = {
+    Matcher: Minimongo.Matcher,
+    compileProjection: LocalCollection._compileProjection,
+  };
+
+  it("returns true for a cursor with no projection and no filter", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, {});
+    assert.strictEqual(canUseRedisOplog(cursor, baseOptions), true);
+  });
+
+  it("returns false when disableOplog is set, without checking the projection", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, { projection: { foo: { $slice: 1 } } });
+    let called = false;
+    const compileProjection = () => { called = true; return () => ({}); };
+    const result = canUseRedisOplog(cursor, {
+      Matcher: Minimongo.Matcher,
+      compileProjection,
+      disableOplog: true,
+    });
+    assert.strictEqual(result, false);
+    assert.strictEqual(called, false, "compileProjection should not be called when disableOplog short-circuits");
+  });
+
+  it("does not call compileProjection when no projection is provided", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, {});
+    let called = false;
+    const compileProjection = () => { called = true; return () => ({}); };
+    const result = canUseRedisOplog(cursor, { Matcher: Minimongo.Matcher, compileProjection });
+    assert.strictEqual(result, true);
+    assert.strictEqual(called, false);
+  });
+
+  it("calls compileProjection with the cursor's projection when one is provided", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, { projection: { foo: 1, bar: 1 } });
+    let received;
+    const compileProjection = (projection) => { received = projection; return () => ({}); };
+    canUseRedisOplog(cursor, { Matcher: Minimongo.Matcher, compileProjection });
+    assert.deepStrictEqual(received, { foo: 1, bar: 1 });
+  });
+
+  it("returns true for a supported projection", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, { projection: { foo: 1 } });
+    assert.strictEqual(canUseRedisOplog(cursor, baseOptions), true);
+  });
+
+  it("returns false when compileProjection throws (unsupported operator in projection)", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, { projection: { tags: { $slice: 2 } } });
+    assert.strictEqual(canUseRedisOplog(cursor, baseOptions), false);
+  });
+
+  it("returns false when compileProjection throws a generic error", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({}, { projection: { foo: 1 } });
+    const compileProjection = () => { throw new Error("nope"); };
+    const result = canUseRedisOplog(cursor, { Matcher: Minimongo.Matcher, compileProjection });
+    assert.strictEqual(result, false);
+  });
+
+  it("returns false when the filter contains $where", () => {
+    const collection = new FakeCollection([]);
+    const cursor = collection.find({ $where: "this.value === 1" }, {});
+    assert.strictEqual(canUseRedisOplog(cursor, baseOptions), false);
   });
 });
