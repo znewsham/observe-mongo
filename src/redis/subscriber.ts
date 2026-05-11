@@ -658,6 +658,21 @@ export class RedisObserverDriver<
     this.#multiplexer.ready();
   }
 
+  /**
+   * Ensures all events observed have fully propagated through to the multiplexer and from there to the registered handles
+   */
+  async flush() {
+    if (this.#stopped) {
+      return;
+    }
+    return this.#queue.runTask(() => {
+      if (this.#stopped) {
+        return;
+      }
+      return this.#multiplexer?.flush();
+    });
+  }
+
   stop(): void {
     this.#manager.detach<T, SortT, FilterT>(this);
     this.#stopped = true;

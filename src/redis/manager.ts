@@ -130,6 +130,15 @@ export class SubscriptionManager {
     });
   }
 
+  /**
+   * Returns all subscribers for a given channel.
+   * @param channel The channel name.
+   * @returns An array of subscribers.
+   */
+  getSubscribers(channel: string): RedisSubscriber[] {
+    return Array.from(this.#subscribers.get(channel)?.subscribers || []);
+  }
+
   async process<T extends { _id: Stringable }>(
     channel: string,
     message: RedisMessage<{ _id: T["_id"] }>,
