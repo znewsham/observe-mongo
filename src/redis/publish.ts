@@ -60,7 +60,7 @@ export async function handleRemove(
 
 // Returns the union of top-level field names affected by `mutator`, or
 // `undefined` if the affected set is not statically knowable (replacement
-// updates and pipelines containing $replaceRoot/$replaceWith). Subscribers
+// updates and pipelines containing $project/$replaceRoot/$replaceWith). Subscribers
 // treat absent FIELDS as "always fetch".
 export function topLevelFieldsFromMutator(mutator: unknown): string[] | undefined {
   if (mutator == null || typeof mutator !== "object") return undefined;
@@ -70,7 +70,7 @@ export function topLevelFieldsFromMutator(mutator: unknown): string[] | undefine
     for (const stage of mutator) {
       if (!stage || typeof stage !== "object" || Array.isArray(stage)) continue;
       for (const [op, operand] of Object.entries(stage)) {
-        if (op === "$replaceRoot" || op === "$replaceWith") return undefined;
+        if (op === "$project" || op === "$replaceRoot" || op === "$replaceWith") return undefined;
         if (op === "$unset") {
           if (typeof operand === "string") {
             fields.add(operand.split(".")[0]);
@@ -82,7 +82,7 @@ export function topLevelFieldsFromMutator(mutator: unknown): string[] | undefine
           }
           continue;
         }
-        if (op === "$set" || op === "$addFields" || op === "$project") {
+        if (op === "$set" || op === "$addFields") {
           if (operand && typeof operand === "object" && !Array.isArray(operand)) {
             for (const key of Object.keys(operand)) fields.add(key.split(".")[0]);
           }
