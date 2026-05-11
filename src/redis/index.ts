@@ -18,10 +18,22 @@ export { getChannels } from "./getChannels.js";
 
 export function canUseRedisOplog<T extends { _id: Stringable }>(
   cursor: FindCursorWithDescription<T>,
-  options: Pick<RedisObserverDriverOptions<T>, "Matcher" | "disableOplog">
+  options: Pick<RedisObserverDriverOptions<T>, "Matcher" | "compileProjection" | "disableOplog">
 ) {
   if (options?.disableOplog) {
     return false;
+  }
+  const projection = cursor.cursorDescription.options?.projection;
+  if (projection) {
+    try {
+      if (typeof options.compileProjection !== "function") {
+        return false;
+      }
+      options.compileProjection(projection);
+    }
+    catch (e) {
+      return false;
+    }
   }
   if (cursor.cursorDescription.filter) {
     let matcher;
